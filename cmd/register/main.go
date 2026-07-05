@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,11 +33,25 @@ func main() {
 	// Ensure data directory exists
 	os.MkdirAll("data", 0755)
 
+	// Headless mode flags
+	headless := flag.Bool("headless", false, "Run without interactive prompts")
+	headlessCount := flag.Int("count", 0, "Number of accounts to register (headless mode)")
+	headlessWorkers := flag.Int("workers", 3, "Number of concurrent workers (headless mode)")
+	headlessExport := flag.String("export", "", "Export format after completion: json, csv, txt (headless mode)")
+	headlessConfig := flag.String("config", "config.json", "Path to config file")
+	flag.Parse()
+
 	// Load config
-	cfg, err := config.Load("config.json")
+	cfg, err := config.Load(*headlessConfig)
 	if err != nil {
 		fmt.Printf(ui.C("Error loading config: %v\n", ui.Red), err)
 		os.Exit(1)
+	}
+
+	// Headless mode: run immediately without interactive menu
+	if *headless {
+		runHeadless(cfg, *headlessCount, *headlessWorkers, *headlessExport)
+		return
 	}
 
 	reader := bufio.NewReader(os.Stdin)
@@ -93,19 +108,20 @@ func main() {
 
 				proxyPool := buildProxyPool(cfg)
 
-				batchCfg := &register.BatchConfig{
-					TotalAccounts:   int(sess.Remaining),
-					OutputFile:      cfg.OutputFile,
-					MaxWorkers:      sess.MaxWorkers,
-					Proxy:           cfg.Proxy,
-					ProxyPool:       proxyPool,
-					DefaultPassword: cfg.DefaultPassword,
-					DefaultDomain:   cfg.DefaultDomain,
-					K12WorkspaceIDs: k12WorkspaceIDs,
-					GmailMode:       cfg.GmailMode,
-					GmailPool:       gmailPool,
-					GmailAccounts:   cfg.GmailAccounts,
-				}
+			batchCfg := &register.BatchConfig{
+				TotalAccounts:   int(sess.Remaining),
+				OutputFile:      cfg.OutputFile,
+				MaxWorkers:      sess.MaxWorkers,
+				Proxy:           cfg.Proxy,
+				ProxyPool:       proxyPool,
+				DefaultPassword: cfg.DefaultPassword,
+				DefaultDomain:   cfg.DefaultDomain,
+				K12WorkspaceIDs: k12WorkspaceIDs,
+				WebhookURL:      cfg.WebhookURL,
+				GmailMode:       cfg.GmailMode,
+				GmailPool:       gmailPool,
+				GmailAccounts:   cfg.GmailAccounts,
+			}
 
 				os.Remove(sessionFile) // clear session to avoid infinite loop on crash
 
@@ -274,6 +290,17 @@ func printHelpGuide(reader *bufio.Reader) {
 	fmt.Println(ui.C("\n4. App Password Google", ui.Yellow))
 	fmt.Println("   Password yang dimasukkan BUKAN password login Gmail Anda, melainkan")
 	fmt.Println("   16 digit 'App Password' dari Pengaturan Keamanan Akun Google Anda.")
+
+	fmt.Println(ui.C("\n🆕 FITUR BARU v1.2:", ui.Purple))
+	fmt.Println("   • 🌐 Proxy Rotation: Multiple proxy auto-switch on failure")
+	fmt.Println("   • 🔗 Multi-Workspace: K12 invite ke beberapa workspace ID")
+	fmt.Println("   • 🔍 Health Check: Cek validitas token (Menu > Opsi 5)")
+	fmt.Println("   • 📋 Account Manager: List, export, delete, stats (Menu > Opsi 6)")
+	fmt.Println("   • 🔄 Auto-Refresh: Jalankan: go run ./cmd/refresher/")
+	fmt.Println("   • 🎫 JWT Analyzer: Decode token: go run ./cmd/jwtanalyzer/")
+	fmt.Println("   • 🤖 Headless Mode: --headless --count N --workers N")
+	fmt.Println("   • 📢 Discord Webhook: Set webhook_url di config.json")
+	fmt.Println("   • ⛔ Smart Rate Limiter: Auto backoff 429/409")
 
 	fmt.Println(ui.C("\n────────────────────────────────────────────────────", ui.Cyan))
 	fmt.Printf(ui.C("Tekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
@@ -663,6 +690,70 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 	}
 }
 
+// runHeadless runs the registration in headless (non-interactive) mode.
+func runHeadless(cfg *config.Config, count, workers int, exportFormat string) {
+	if count <= 0 {
+		fmt.Println(ui.C("⚠ Error: --count is required in headless mode", ui.Red))
+		os.Exit(1)
+	}
+
+	var gmailPool *email.GmailDotPool
+	if cfg.GmailMode && len(cfg.GmailAccounts) > 0 {
+		var listFiles []string
+		for _, acc := range cfg.GmailAccounts {
+			listFiles = append(listFiles, acc.ListFile)
+			if _, err := os.Stat(acc.ListFile); os.IsNotExist(err) {
+				email.GenerateDotTrick(acc.BaseEmail, acc.ListFile)
+			}
+		}
+		var err error
+		gmailPool, err = email.NewMultiGmailPool(listFiles)
+		if err != nil {
+			fmt.Printf(ui.C("⚠ Error loading Gmail lists: %v\n", ui.Red), err)
+			os.Exit(1)
+		}
+		if count > gmailPool.Remaining() {
+			fmt.Printf(ui.C("⚠ Only %d Gmail addresses available, reducing target\n", ui.Yellow), gmailPool.Remaining())
+			count = gmailPool.Remaining()
+		}
+	}
+
+	k12WorkspaceIDs := cfg.K12WorkspaceIDs
+	if !cfg.EnableK12Invite {
+		k12WorkspaceIDs = nil
+	}
+
+	proxyPool := buildProxyPool(cfg)
+
+	batchCfg := &register.BatchConfig{
+		TotalAccounts:   count,
+		OutputFile:      cfg.OutputFile,
+		MaxWorkers:      workers,
+		Proxy:           cfg.Proxy,
+		ProxyPool:       proxyPool,
+		DefaultPassword: cfg.DefaultPassword,
+		DefaultDomain:   cfg.DefaultDomain,
+		K12WorkspaceIDs: k12WorkspaceIDs,
+		WebhookURL:      cfg.WebhookURL,
+		GmailMode:       cfg.GmailMode,
+		GmailPool:       gmailPool,
+		GmailAccounts:   cfg.GmailAccounts,
+	}
+
+	fmt.Printf(ui.C("🚀 Headless mode: %d accounts / %d workers\n", ui.Green), count, workers)
+	register.RunBatch(batchCfg)
+
+	if exportFormat != "" {
+		entries, err := manager.LoadAllAccounts("data")
+		if err == nil && len(entries) > 0 {
+			outputFile := fmt.Sprintf("export_tokens.%s", exportFormat)
+			if err := manager.ExportAccounts(entries, exportFormat, outputFile); err == nil {
+				fmt.Printf(ui.C("✅ Exported %d tokens to %s\n", ui.Green), len(entries), outputFile)
+			}
+		}
+	}
+}
+
 // buildProxyPool creates a proxy pool from config, falling back to single proxy.
 func buildProxyPool(cfg *config.Config) *util.ProxyPool {
 	var proxies []string
@@ -769,6 +860,7 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 		DefaultPassword: cfg.DefaultPassword,
 		DefaultDomain:   cfg.DefaultDomain,
 		K12WorkspaceIDs: k12WorkspaceIDs,
+		WebhookURL:      cfg.WebhookURL,
 		GmailMode:       cfg.GmailMode,
 		GmailPool:       gmailPool,
 		GmailAccounts:   cfg.GmailAccounts,

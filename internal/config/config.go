@@ -17,13 +17,14 @@ type GmailAccount struct {
 // Config holds the application configuration.
 type Config struct {
 	Proxy           string   `json:"proxy"`
-	ProxyList       []string `json:"proxy_list,omitempty"` // list of proxies for rotation
+	ProxyList       []string `json:"proxy_list,omitempty"`
 	OutputFile      string   `json:"output_file"`
 	TokenOutputFile string   `json:"token_output_file"`
 	DefaultPassword string   `json:"default_password"`
 	DefaultDomain   string   `json:"default_domain"`
 	K12WorkspaceIDs []string `json:"k12_workspace_ids"`
 	EnableK12Invite bool     `json:"enable_k12_invite"`
+	WebhookURL      string   `json:"webhook_url,omitempty"`
 
 	// Gmail mode settings
 	GmailMode     bool           `json:"gmail_mode"`

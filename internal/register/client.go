@@ -32,6 +32,7 @@ type Client struct {
 	secChUA     string
 	printMu     *sync.Mutex
 	fileMu      *sync.Mutex
+	rateLimiter *RateLimiter
 }
 
 func NewClient(proxy, tag string, workerID int, printMu, fileMu *sync.Mutex) (*Client, error) {
@@ -108,7 +109,24 @@ func (c *Client) do(req *http.Request) (*http.Response, error) {
 		req.Header.Set("sec-ch-ua-platform", `"Windows"`)
 	}
 
-	return c.session.Do(req)
+	// Check rate limiter before making request
+	if c.rateLimiter != nil {
+		endpoint := req.URL.Path
+		c.rateLimiter.Wait(c.proxy, endpoint)
+	}
+
+	resp, err := c.session.Do(req)
+
+	// Record rate limit hit if we got rate limited
+	if err == nil && c.rateLimiter != nil && IsRateLimited(resp.StatusCode) {
+		endpoint := req.URL.Path
+		c.rateLimiter.RecordHit(c.proxy, endpoint)
+
+		// Log rate limit for visibility
+		c.print(fmt.Sprintf("⛔ Rate limited on %s (status %d), backing off...", endpoint, resp.StatusCode))
+	}
+
+	return resp, err
 }
 
 func (c *Client) log(step string, status int) {

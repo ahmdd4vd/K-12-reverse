@@ -16,6 +16,7 @@ import (
 	"github.com/verssache/chatgpt-creator/internal/email"
 	"github.com/verssache/chatgpt-creator/internal/ui"
 	"github.com/verssache/chatgpt-creator/internal/util"
+	"github.com/verssache/chatgpt-creator/internal/webhook"
 )
 
 // BatchConfig holds all batch registration settings.
@@ -28,6 +29,8 @@ type BatchConfig struct {
 	DefaultPassword string
 	DefaultDomain   string
 	K12WorkspaceIDs []string
+	WebhookURL      string
+	RateLimiter     *RateLimiter
 
 	// Gmail mode
 	GmailMode     bool
@@ -59,6 +62,11 @@ func registerOne(workerID int, tag string, cfg *BatchConfig, registeredEmails ma
 			cfg.ProxyPool.MarkFailure(proxy)
 		}
 		return false, "", fmt.Sprintf("failed to create client: %v", err), nil
+	}
+
+	// Attach rate limiter to client
+	if cfg.RateLimiter != nil {
+		client.rateLimiter = cfg.RateLimiter
 	}
 
 	var emailAddr string
@@ -197,6 +205,11 @@ func RunBatch(cfg *BatchConfig) {
 
 	registeredEmails := make(map[string]bool)
 
+	// Initialize shared rate limiter if not provided
+	if cfg.RateLimiter == nil {
+		cfg.RateLimiter = NewRateLimiter()
+	}
+
 	// In Gmail mode, read all existing account.json files to skip registered emails
 	if cfg.GmailMode {
 		for _, acc := range cfg.GmailAccounts {
@@ -290,7 +303,7 @@ func RunBatch(cfg *BatchConfig) {
 				if success {
 					atomic.AddInt64(&successCount, 1)
 					ts := time.Now().Format("15:04:05")
-
+					
 					printMu.Lock()
 					if cfg.GmailMode {
 						base := getBaseEmail(emailAddr)
@@ -299,6 +312,20 @@ func RunBatch(cfg *BatchConfig) {
 						fmt.Printf("[%s] [W%d] %s\n", ts, workerID, ui.C("✓ SUCCESS: "+emailAddr, ui.Green))
 					}
 					printMu.Unlock()
+
+					// Discord webhook notification
+					if cfg.WebhookURL != "" && tokenResult != nil {
+						planType := "free"
+						if len(tokenResult.WorkspaceTokens) > 0 {
+							planType = "k12"
+						}
+						wsID := ""
+						for id := range tokenResult.WorkspaceTokens {
+							wsID = id
+							break
+						}
+						go webhook.SendAccountCreated(cfg.WebhookURL, emailAddr, planType, wsID)
+					}
 
 					// Collect token result and save to specific JSON
 					if tokenResult != nil {
@@ -310,6 +337,11 @@ func RunBatch(cfg *BatchConfig) {
 					}
 				} else {
 					atomic.AddInt64(&failureCount, 1)
+
+					// Discord webhook for failure
+					if cfg.WebhookURL != "" {
+						go webhook.SendAccountFailed(cfg.WebhookURL, emailAddr, errStr)
+					}
 
 					// In Gmail mode, don't retry with same email (it's consumed or failed)
 					if !cfg.GmailMode {
@@ -363,6 +395,9 @@ func RunBatch(cfg *BatchConfig) {
 		fmt.Printf("Tokens:    data/accounts_*.json\n")
 	} else {
 		fmt.Printf("Tokens:    accounts.json\n")
+	}
+	if cfg.WebhookURL != "" {
+		go webhook.SendSummary(cfg.WebhookURL, int(successCount), int(failureCount), cfg.TotalAccounts, elapsedStr)
 	}
 	fmt.Println(ui.C("──────────────────────────────────", ui.Cyan))
 }
