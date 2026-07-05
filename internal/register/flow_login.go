@@ -70,13 +70,11 @@ func (c *Client) RunLogin(emailAddr, password string, k12WorkspaceIDs []string, 
 		// Sometimes it might require OTP after password
 		if cbURL != "" && (strings.Contains(cbURL, "email-verification") || strings.Contains(cbURL, "email-otp")) {
 			c.print("Login requires 2FA / OTP verification.")
-			c.sendOTP()
 			needOTP = true
 			cbURL = "" // reset
 		}
 	} else if strings.Contains(finalPath, "email-verification") || strings.Contains(finalPath, "email-otp") {
 		c.print("Passwordless login detected. Jump to OTP verification stage")
-		c.sendOTP()
 		needOTP = true
 	} else if strings.Contains(finalPath, "callback") || strings.Contains(finalURL, "chatgpt.com") {
 		cbURL = finalURL
@@ -89,18 +87,26 @@ func (c *Client) RunLogin(emailAddr, password string, k12WorkspaceIDs []string, 
 		var otpCode string
 		var err error
 
+		// Lock the global Mutex before sending the OTP so only ONE worker can request and fetch an OTP at a time
 		if gmailIMAP != nil {
+			email.IMAPMutex.Lock()
+			// Send OTP only after locking
+			c.sendOTP()
+			
 			c.print("Waiting for Login OTP via IMAP. Reading Gmail inbox...")
 			otpCode, err = email.GetVerificationCodeViaIMAP(*gmailIMAP, emailAddr, 15, 4*time.Second)
+			email.IMAPMutex.Unlock()
+			
 			if err != nil {
 				return nil, fmt.Errorf("failed to auto-read OTP: %v", err)
 			}
 			c.print(fmt.Sprintf("Received OTP automatically: %s", otpCode))
 		} else {
+			c.sendOTP()
 			otpCode, err = email.GetVerificationCode(emailAddr, 20, 3*time.Second)
-		}
-		if err != nil {
-			return nil, err
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		c.randomDelay(0.3, 0.8)

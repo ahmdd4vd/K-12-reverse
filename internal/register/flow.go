@@ -312,8 +312,8 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 	u, _ := url.Parse(finalURL)
 	finalPath := u.Path
 
-
 	needOTP := false
+	needsManualOTPRequest := false
 	var otpCbURL string
 
 	if strings.Contains(finalPath, "create-account/password") {
@@ -326,8 +326,9 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 			return nil, fmt.Errorf("register failed (%d): %v", status, data)
 		}
 		c.randomDelay(0.3, 0.8)
-		c.sendOTP()
+		// c.sendOTP() is handled in the block below instead
 		needOTP = true
+		needsManualOTPRequest = true
 	} else if strings.Contains(finalPath, "email-verification") || strings.Contains(finalPath, "email-otp") {
 		c.print("Jump to OTP verification stage")
 		// c.sendOTP() // OpenAI already sends the OTP automatically when jumping here
@@ -381,13 +382,23 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		var err error
 
 		if gmailIMAP != nil {
+			email.IMAPMutex.Lock()
+			if needsManualOTPRequest {
+				c.sendOTP()
+			}
+			
 			c.print("Waiting for OTP via IMAP. Reading Gmail inbox...")
 			otpCode, err = email.GetVerificationCodeViaIMAP(*gmailIMAP, emailAddr, 15, 4*time.Second)
+			email.IMAPMutex.Unlock()
+			
 			if err != nil {
 				return nil, fmt.Errorf("failed to auto-read OTP: %v", err)
 			}
 			c.print(fmt.Sprintf("Received OTP automatically: %s", otpCode))
 		} else {
+			if needsManualOTPRequest {
+				c.sendOTP()
+			}
 			// Temp email mode: scrape OTP from generator.email
 			otpCode, err = email.GetVerificationCode(emailAddr, 20, 3*time.Second)
 		}
@@ -403,13 +414,16 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 
 		if status != 200 {
 			c.print("Verification code failed, retrying...")
-			c.sendOTP()
-			c.randomDelay(1.0, 2.0)
-
 			if gmailIMAP != nil {
+				email.IMAPMutex.Lock()
+				c.sendOTP()
+				c.randomDelay(1.0, 2.0)
 				c.print("Waiting for OTP retry via IMAP...")
 				otpCode, err = email.GetVerificationCodeViaIMAP(*gmailIMAP, emailAddr, 15, 4*time.Second)
+				email.IMAPMutex.Unlock()
 			} else {
+				c.sendOTP()
+				c.randomDelay(1.0, 2.0)
 				otpCode, err = email.GetVerificationCode(emailAddr, 10, 3*time.Second)
 			}
 			if err != nil {
