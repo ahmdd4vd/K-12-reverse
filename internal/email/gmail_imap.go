@@ -5,6 +5,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/emersion/go-imap"
@@ -18,12 +19,18 @@ type GmailIMAPConfig struct {
 	AppPassword string // Google App Password (16 chars)
 }
 
+var imapMutex sync.Mutex
+
 // GetVerificationCodeViaIMAP connects to Gmail IMAP and retrieves the OTP code from OpenAI emails.
 func GetVerificationCodeViaIMAP(cfg GmailIMAPConfig, targetEmail string, maxRetries int, delay time.Duration) (string, error) {
 	otpRegex := regexp.MustCompile(`\b(\d{6})\b`)
 
 	for i := 0; i < maxRetries; i++ {
+		// Use a mutex to prevent concurrent workers from grabbing the same unread email
+		imapMutex.Lock()
 		code, err := fetchOTPFromGmail(cfg, targetEmail, otpRegex)
+		imapMutex.Unlock()
+
 		if err == nil && code != "" {
 			return code, nil
 		}

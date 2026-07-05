@@ -1,5 +1,5 @@
 {
-  "proxy": "socks5://change4.owlproxy.com:7778:tjVaIiY4GK30_custom_zone_ID_st__city_sid_45975106_time_5:5075731",
+  "proxy": "socks5://change4.owlproxy.com:7778:tjVaIiY4GK30_custom_zone_MY_st__city_sid_53369396_time_5:5075731",
   "output_file": "results.txt",
   "token_output_file": "accounts.json",
   "default_password": "",
@@ -11,9 +11,9 @@
   "gmail_mode": true,
   "gmail_accounts": [
     {
-      "base_email": "dijealok74@gmail.com",
-      "app_password": "gvqr reyh gadc kiqk",
-      "list_file": "data\\list_dijealok74.txt"
+      "base_email": "abizarfirza237@gmail.com",
+      "app_password": "iyav ruhd jgfr lpqj",
+      "list_file": "data\\list_abizarfirza237.txt"
     }
   ]
 }
