@@ -62,14 +62,23 @@ Demi keamanan, Anda tidak bisa menggunakan kata sandi asli Gmail. Anda harus mem
 
 ---
 
-## 🔥 Apa yang baru di v1.1?
+## 🔥 Apa yang baru di v1.2?
 
-Versi 1.1 berfokus pada penyempurnaan alur registrasi untuk mengatasi ketatnya *security* OpenAI terbaru:
+Versi 1.2 berfokus pada perbaikan ekstrem di sektor konkurensi (Multi-Threading) saat mengambil OTP dari IMAP:
 
-- **Zombie Rescue Mechanism**: Sebelumnya (v1.0), akun yang sudah pernah terdaftar tapi prosesnya tidak selesai (karena error koneksi, gagal K-12, dll) akan dilewati (*skip*). Kini di v1.1, program akan otomatis melakukan *switch* ke mode Login untuk menyelamatkan akun tersebut.
-- **Adaptive Authentication (Native Password & OTP)**: OpenAI memiliki dua variasi login. Versi 1.1 secara otomatis bisa menebak jalur yang diberikan OpenAI: apakah menggunakan metode *Passwordless* (OTP ke email) atau menggunakan metode *Native Password*. Kedua jalur ini telah didukung sepenuhnya untuk menjamin keberhasilan 100%.
-- **IMAP Read Status Verification**: Penyempurnaan pada parser Gmail (IMAP). Sistem sekarang hanya membaca email dengan flag `Unread`, mencegah program membaca OTP lama yang tertinggal di *inbox* yang sering memicu error 409 Invalid Session.
-- **Bypass Halaman "About You"**: Sistem login terbaru OpenAI kadang "mencegat" proses masuk dan memaksa masuk ke halaman `/about-you`. Versi 1.1 memiliki *script injection* khusus untuk memintas halaman ini dan melanjutkan perburuan token.
+- **Strict Target IMAP Matching (Concurrency Bypass)**: Pada versi sebelumnya, sistem normalisasi email pada filter inbox IMAP membuat *worker* yang berjalan bersamaan berisiko saling berebut OTP (satu *worker* mencuri OTP milik *worker* lain karena struktur email induknya sama). Versi 1.2 menerapkan pencocokan *To Header* 100% *Exact Match* (termasuk validasi letak titik).
+- **Lock-Free Concurrency**: Berkat pencocokan OTP yang super presisi, antrean (Mutex Locking) saat proses permintaan OTP ke OpenAI telah **dihapus sepenuhnya**. Kini puluhan *worker* bisa berjalan secara paralel di detik yang sama, meminta OTP dan membacanya di *inbox* yang sama tanpa *conflict* atau *overlap*. Kecepatan registrasi naik drastis!
+
+---
+
+## ⚡ Pembaruan Versi Sebelumnya (v1.1)
+
+Versi 1.1 memperkenalkan mekanisme pemulihan cerdas:
+
+- **Zombie Rescue Mechanism**: Akun yang menggantung (proses tidak selesai) otomatis dialihkan ke alur Login untuk diselamatkan.
+- **Adaptive Authentication (Native Password & OTP)**: Deteksi otomatis metode *Passwordless* (OTP) atau *Native Password* saat login.
+- **IMAP Read Status Verification**: Filter khusus untuk hanya membaca email OTP yang belum terbaca (*Unread*), menghindari duplikasi pembacaan.
+- **Bypass Halaman "About You"**: Injeksi khusus untuk memintas halaman blokir `/about-you` saat proses Login.
 
 ---
 

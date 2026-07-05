@@ -382,14 +382,12 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		var err error
 
 		if gmailIMAP != nil {
-			email.IMAPMutex.Lock()
 			if needsManualOTPRequest {
 				c.sendOTP()
 			}
 			
 			c.print("Waiting for OTP via IMAP. Reading Gmail inbox...")
 			otpCode, err = email.GetVerificationCodeViaIMAP(*gmailIMAP, emailAddr, 15, 4*time.Second)
-			email.IMAPMutex.Unlock()
 			
 			if err != nil {
 				return nil, fmt.Errorf("failed to auto-read OTP: %v", err)
@@ -415,12 +413,10 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		if status != 200 {
 			c.print("Verification code failed, retrying...")
 			if gmailIMAP != nil {
-				email.IMAPMutex.Lock()
 				c.sendOTP()
 				c.randomDelay(1.0, 2.0)
 				c.print("Waiting for OTP retry via IMAP...")
 				otpCode, err = email.GetVerificationCodeViaIMAP(*gmailIMAP, emailAddr, 15, 4*time.Second)
-				email.IMAPMutex.Unlock()
 			} else {
 				c.sendOTP()
 				c.randomDelay(1.0, 2.0)

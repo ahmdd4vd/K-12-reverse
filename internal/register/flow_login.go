@@ -87,15 +87,11 @@ func (c *Client) RunLogin(emailAddr, password string, k12WorkspaceIDs []string, 
 		var otpCode string
 		var err error
 
-		// Lock the global Mutex before sending the OTP so only ONE worker can request and fetch an OTP at a time
 		if gmailIMAP != nil {
-			email.IMAPMutex.Lock()
-			// Send OTP only after locking
 			c.sendOTP()
 			
 			c.print("Waiting for Login OTP via IMAP. Reading Gmail inbox...")
 			otpCode, err = email.GetVerificationCodeViaIMAP(*gmailIMAP, emailAddr, 15, 4*time.Second)
-			email.IMAPMutex.Unlock()
 			
 			if err != nil {
 				return nil, fmt.Errorf("failed to auto-read OTP: %v", err)
