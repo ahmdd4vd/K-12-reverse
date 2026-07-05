@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/verssache/chatgpt-creator/internal/chrome"
+	"github.com/verssache/chatgpt-creator/internal/util"
 )
 
 const (
@@ -44,7 +45,8 @@ func NewClient(proxy, tag string, workerID int, printMu, fileMu *sync.Mutex) (*C
 	}
 
 	if proxy != "" {
-		options = append(options, tls_client.WithProxyUrl(proxy))
+		formattedProxy := util.FormatProxy(proxy)
+		options = append(options, tls_client.WithProxyUrl(formattedProxy))
 	}
 
 	session, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
