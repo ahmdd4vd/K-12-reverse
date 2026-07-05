@@ -202,7 +202,7 @@ func (c *Client) validateOTP(code string) (int, map[string]interface{}, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Referer", authURL+"/email-verification")
-	req.Header.Set("Origin", authURL)
+	req.Header.Set("Origin", "https://auth.openai.com")
 
 	traceHeaders := util.MakeTraceHeaders()
 	for k, v := range traceHeaders {
@@ -297,7 +297,7 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 	}
 	c.randomDelay(0.2, 0.5)
 
-	authURL, err := c.signin(emailAddr, csrf, "")
+	authURL, err := c.signin(emailAddr, csrf, "signup")
 	if err != nil {
 		return nil, err
 	}
@@ -314,6 +314,7 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 
 
 	needOTP := false
+	var otpCbURL string
 
 	if strings.Contains(finalPath, "create-account/password") {
 		c.randomDelay(0.5, 1.0)
@@ -329,6 +330,7 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		needOTP = true
 	} else if strings.Contains(finalPath, "email-verification") || strings.Contains(finalPath, "email-otp") {
 		c.print("Jump to OTP verification stage")
+		// c.sendOTP() // OpenAI already sends the OTP automatically when jumping here
 		needOTP = true
 	} else if strings.Contains(finalPath, "about-you") {
 		c.print("Jump to fill information stage")
@@ -342,15 +344,14 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		}
 		c.randomDelay(0.3, 0.5)
 
-		var cbURL string
 		if u, ok := data["continue_url"].(string); ok {
-			cbURL = u
+			otpCbURL = u
 		} else if u, ok := data["url"].(string); ok {
-			cbURL = u
+			otpCbURL = u
 		} else if u, ok := data["redirect_url"].(string); ok {
-			cbURL = u
+			otpCbURL = u
 		}
-		c.callback(cbURL)
+		c.callback(otpCbURL)
 
 		// K12 invite + token extraction
 		if len(k12WorkspaceIDs) > 0 {
@@ -372,9 +373,7 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		return nil, fmt.Errorf("auth rate limit or error encountered: please change IP/Proxy or try again later")
 	} else {
 		c.print(fmt.Sprintf("Unknown jump: %s", finalURL))
-		c.register(emailAddr, password)
-		c.sendOTP()
-		needOTP = true
+		return nil, fmt.Errorf("unexpected register redirect: %s", finalPath)
 	}
 
 	if needOTP {
@@ -425,34 +424,46 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 				return nil, fmt.Errorf("verification code failed after retry (%d): %v", status, data)
 			}
 		}
-	}
+		
+		c.print(fmt.Sprintf("Validate OTP Data: %v", data))
 
-	// After OTP validation, proceed to createAccount
-	c.randomDelay(0.5, 1.5)
-	status, accountData, err := c.createAccount(name, birthdate)
-	if err != nil {
-		return nil, err
-	}
-	if status != 200 {
-		errStr := fmt.Sprintf("%v", accountData)
-		if strings.Contains(errStr, "user_already_exists") {
-			// This email was previously partially registered (email verified but profile never completed).
-			// Even in a browser this is a dead-end - Auth0 can't create or login.
-			// Skip this email and move to the next one.
-			c.print("⚠ SKIP: Account is a zombie (partially registered, can't login or create). Trying next email...")
-			return nil, fmt.Errorf("SKIP_EMAIL: account already exists for %s, cannot recover", emailAddr)
+		if u, ok := data["redirect_url"].(string); ok {
+			otpCbURL = u
+		} else if u, ok := data["continue_url"].(string); ok {
+			otpCbURL = u
 		}
-		return nil, fmt.Errorf("create account failed (%d): %v", status, accountData)
 	}
 
-	// Extract callback URL from successful createAccount response
 	var cbURL string
-	if u, ok := accountData["continue_url"].(string); ok {
-		cbURL = u
-	} else if u, ok := accountData["url"].(string); ok {
-		cbURL = u
-	} else if u, ok := accountData["redirect_url"].(string); ok {
-		cbURL = u
+	if otpCbURL != "" && strings.Contains(otpCbURL, "callback") {
+		c.print("🚀 Account recovered from Zombie state via OTP!")
+		cbURL = otpCbURL
+	} else {
+		// After OTP validation, proceed to createAccount
+		c.randomDelay(0.5, 1.5)
+		status, accountData, err := c.createAccount(name, birthdate)
+		if err != nil {
+			return nil, err
+		}
+		if status != 200 {
+			errStr := fmt.Sprintf("%v", accountData)
+			if strings.Contains(errStr, "user_already_exists") {
+				// This email was previously partially registered (email verified but profile never completed).
+				// Even in a browser this is a dead-end - Auth0 can't create or login.
+				// Skip this email and move to the next one.
+				c.print("⚠ SKIP: Account is a zombie (partially registered, can't login or create). Trying next email...")
+				return nil, fmt.Errorf("SKIP_EMAIL: account already exists for %s, cannot recover", emailAddr)
+			}
+			return nil, fmt.Errorf("create account failed (%d): %v", status, accountData)
+		}
+
+		if u, ok := accountData["continue_url"].(string); ok {
+			cbURL = u
+		} else if u, ok := accountData["url"].(string); ok {
+			cbURL = u
+		} else if u, ok := accountData["redirect_url"].(string); ok {
+			cbURL = u
+		}
 	}
 
 	if cbURL != "" && !strings.HasPrefix(cbURL, "http") {

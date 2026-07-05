@@ -9,10 +9,10 @@ K12-Reverse adalah *tool* berbasis Go (Golang) untuk melakukan registrasi akun C
 ## 🚀 Fitur Utama
 
 - **Multi-Gmail Dot-Trick**: Menghasilkan ribuan variasi email unik dari satu akun Gmail dasar tanpa memicu sistem anti-spam.
-- **IMAP Auto-Read**: Membaca kotak masuk Gmail secara *headless* via protokol IMAP untuk memvalidasi OTP (One Time Password) secepat kilat.
-- **K12 Auto-Invite**: Menggabungkan akun baru ke dalam *workspace* Edukasi (K12) secara instan, lengkap dengan ekstraksi *Token Session*.
+- **IMAP Auto-Read V2**: Membaca kotak masuk Gmail secara *headless* via protokol IMAP. Fitur terbaru ini sudah disempurnakan (Unread Filter) untuk mencegah kesalahan pembacaan OTP yang kedaluwarsa.
+- **Auto Login & Zombie Rescue (New in v1.1!)**: Otomatis mendeteksi akun yang sudah terdaftar tetapi menggantung (Zombie). Sistem akan secara otomatis *switch* dari alur Pendaftaran (Sign-up) menjadi alur Masuk (Login) baik menggunakan metode OTP maupun Password Native, tanpa putus!
+- **K12 Auto-Invite**: Menggabungkan akun baru (atau akun Zombie yang berhasil di-rescue) ke dalam *workspace* Edukasi (K12) secara instan, lengkap dengan ekstraksi *Token Session*.
 - **Multi-Threading / Workers**: Mendukung registrasi konkurensi (berjalan bersamaan) untuk kecepatan maksimal.
-- **Anti-Zombie System**: Deteksi otomatis untuk melewati (*skip*) email yang sebelumnya gagal atau menggantung di tengah pendaftaran.
 - **Smart Proxy Support**: Mendukung SOCKS5 / HTTP Proxy dengan *auth* URL (contoh: `socks5://user:pass@host:port`).
 - **Auto-Resume**: Melanjutkan registrasi yang tertunda akibat kegagalan proxy atau terputusnya koneksi, tepat di titik berhentinya.
 
@@ -62,23 +62,14 @@ Demi keamanan, Anda tidak bisa menggunakan kata sandi asli Gmail. Anda harus mem
 
 ---
 
-## ⚠️ Memahami Akun "Zombie"
+## 🔥 Apa yang baru di v1.1?
 
-Saat menjalankan program, Anda mungkin menemui peringatan seperti ini di terminal:
-`SKIP: Account is a zombie (partially registered, can't login or create).`
+Versi 1.1 berfokus pada penyempurnaan alur registrasi untuk mengatasi ketatnya *security* OpenAI terbaru:
 
-**Apa itu Akun Zombie?**
-Sistem registrasi saat ini **hanya berfokus pada Sign-Up (Pembuatan Akun)** dan melewati fitur Login. Jika dalam eksekusi sebelumnya program terhenti/gagal (misalnya proxy terputus atau *rate-limit*) di tengah-tengah proses pendaftaran, email tersebut sudah tercatat di sistem *backend* OpenAI, tetapi profil dan *password*-nya belum terbentuk sempurna.
-
-Akibatnya, email tersebut menjadi "menggantung" (Zombie). Saat *tool* mencoba mendaftarkannya ulang, sistem akan merespon `user_already_exists`, namun email tersebut tidak memiliki kredensial Login yang valid. 
-Sistem K12-Reverse telah diprogram untuk otomatis mendeteksi dan mengabaikan email-email ini, sehingga antrean Anda tetap berjalan mulus ke variasi Dot-Trick berikutnya.
-
----
-
-## 🔮 Rencana Pengembangan Selanjutnya
-
-Fitur utama yang sedang dalam tahap riset dan pengembangan selanjutnya:
-- **Sistem Login Universal**: Modul baru untuk melakukan autentikasi penuh (Login) pada akun yang sudah jadi, memungkinkan sinkronisasi profil, perbaikan akun zombie, dan pembaruan Token secara berkala tanpa harus mendaftar ulang.
+- **Zombie Rescue Mechanism**: Sebelumnya (v1.0), akun yang sudah pernah terdaftar tapi prosesnya tidak selesai (karena error koneksi, gagal K-12, dll) akan dilewati (*skip*). Kini di v1.1, program akan otomatis melakukan *switch* ke mode Login untuk menyelamatkan akun tersebut.
+- **Adaptive Authentication (Native Password & OTP)**: OpenAI memiliki dua variasi login. Versi 1.1 secara otomatis bisa menebak jalur yang diberikan OpenAI: apakah menggunakan metode *Passwordless* (OTP ke email) atau menggunakan metode *Native Password*. Kedua jalur ini telah didukung sepenuhnya untuk menjamin keberhasilan 100%.
+- **IMAP Read Status Verification**: Penyempurnaan pada parser Gmail (IMAP). Sistem sekarang hanya membaca email dengan flag `Unread`, mencegah program membaca OTP lama yang tertinggal di *inbox* yang sering memicu error 409 Invalid Session.
+- **Bypass Halaman "About You"**: Sistem login terbaru OpenAI kadang "mencegat" proses masuk dan memaksa masuk ke halaman `/about-you`. Versi 1.1 memiliki *script injection* khusus untuk memintas halaman ini dan melanjutkan perburuan token.
 
 ---
 

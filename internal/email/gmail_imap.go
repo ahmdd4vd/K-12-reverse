@@ -60,6 +60,7 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 	// Search for emails from the last 2 hours (we filter by 5 mins later, but this reduces search space)
 	criteria := imap.NewSearchCriteria()
 	criteria.Since = time.Now().Add(-2 * time.Hour)
+	criteria.WithoutFlags = []string{imap.SeenFlag}
 	uids, err := c.Search(criteria)
 	if err != nil {
 		return "", fmt.Errorf("search error: %w", err)

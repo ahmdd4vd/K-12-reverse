@@ -12,7 +12,7 @@ import (
 	"github.com/verssache/chatgpt-creator/internal/ui"
 )
 
-const CurrentVersion = "v1.0.0"
+const CurrentVersion = "v1.1"
 const RepoAPI = "https://api.github.com/repos/ahmdd4vd/K-12-reverse/releases/latest"
 
 type Release struct {

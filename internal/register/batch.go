@@ -115,16 +115,33 @@ func registerOne(workerID int, tag string, cfg *BatchConfig, registeredEmails ma
 	}
 
 	if err != nil {
-		// Handle Zombie auto-purge
-		if cfg.GmailMode && (strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "profile")) {
-			cfg.GmailPool.MarkConsumed(emailAddr) // Shrink list
+		// Handle Zombie auto-purge & Rescue
+		if cfg.GmailMode && (strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "profile") || strings.Contains(err.Error(), "log-in/password")) {
+			printMu.Lock()
+			fmt.Printf("[%s] 🔄 Zombie detected! Switching to Login Mode for %s...\n", time.Now().Format("15:04:05"), emailAddr)
+			printMu.Unlock()
+			
+			tokenResult, err = client.RunLogin(emailAddr, password, cfg.K12WorkspaceIDs, gmailIMAP)
+			if tokenResult != nil {
+				tokenResult.Password = password
+			}
+			
+			if err != nil {
+				cfg.GmailPool.MarkConsumed(emailAddr) // Shrink list
+				return false, emailAddr, "Zombie Login Failed: " + err.Error(), nil
+			}
+		} else {
+			return false, emailAddr, err.Error(), nil
 		}
-		return false, emailAddr, err.Error(), nil
 	}
 
 	// Success! Mark consumed so it's removed from list
 	if cfg.GmailMode {
 		cfg.GmailPool.MarkConsumed(emailAddr)
+	}
+
+	if tokenResult != nil {
+		saveTokensPerBase(emailAddr, tokenResult, cfg.GmailMode)
 	}
 
 	// Append to generic text output file
