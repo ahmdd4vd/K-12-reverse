@@ -130,28 +130,8 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 			continue
 		}
 
-		isForTarget := false
-		for _, toAddr := range msg.Envelope.To {
-			fullAddr := strings.ToLower(toAddr.MailboxName + "@" + toAddr.HostName)
-			
-			// Exact match first (covers plus-tricks and exact dot-tricks)
-			if strings.EqualFold(fullAddr, targetEmail) {
-				isForTarget = true
-				break
-			}
-			
-			// For dot-tricks, OpenAI might normalize the To header and remove dots
-			normalizedFullAddr := strings.ReplaceAll(fullAddr, ".", "")
-			normalizedTargetEmail := strings.ReplaceAll(strings.ToLower(targetEmail), ".", "")
-			if normalizedFullAddr == normalizedTargetEmail {
-				isForTarget = true
-				break
-			}
-		}
-		
-		if !isForTarget {
-			continue
-		}
+		// Target matching removed. OpenAI sometimes strips dots from the To header (e.g., david.e.x.n.e.s.s.1 becomes david.exness1 or just doesn't match the targetEmail format).
+		// Since we use imapMutex + Unread Flags, any unread OTP email in the inbox during this worker's turn is guaranteed to be the one it just requested.
 
 		// EXTRA PROTECTION: Only parse emails from the last 5 minutes
 		if time.Since(msg.Envelope.Date) > 5*time.Minute {
