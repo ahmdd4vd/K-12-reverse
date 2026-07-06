@@ -87,8 +87,11 @@ Pembaruan terbaru dari kontributor komunitas membawa perbaikan krusial pada stab
 
 - **Proxy Preflight Check (oleh @ricatix)**: Sistem kini melakukan validasi kesehatan proxy secara aktif sebelum proses pendaftaran ke OpenAI dimulai. Jika proxy mati, *worker* akan langsung melewatinya.
 - **Safe Registration Cancellation (oleh @ricatix)**: Dukungan *Graceful Shutdown* saat pengguna menekan Ctrl+C. Semua *goroutine* dan *worker* akan dibatalkan dengan mulus tanpa merusak *state* pendaftaran.
-- **Robust OTP & EOF Handling (oleh @gede-cahya)**: Sinkronisasi pemanggilan OTP di dalam *mutex* IMAP (*race-condition fix*), penanganan akun *Zombie* tingkat lanjut, serta pencegahan sistem *crash* akibat *error* input `EOF`.
 - **Auto Import ke 9Router (oleh @gede-cahya)**: Fitur integrasi langsung! Setiap token akun K12 yang sukses dicetak akan otomatis di-*push* atau di-*import* ke *server* 9Router tanpa perlu menyalin file secara manual.
+
+### 🔧 Hotfix & Penyesuaian Terkini
+- **JSON Duplicate Bug Fix**: Memperbaiki kutu (*bug*) pemanggilan ganda pada fungsi `saveTokensPerBase` yang sebelumnya menyebabkan output token JSON tercetak dobel (tersimpan 2 kali) untuk setiap satu akun yang berhasil dibuat.
+- **Revert Logika Zombie & IMAP (Eks-PR #4)**: Modifikasi logika Zombie Handling dan pembacaan OTP IMAP dari PR #4 telah di-*revert* kembali ke versi murni orisinal 1.2 karena menyebabkan konflik *flow* registrasi. Namun, perbaikan *crash* input `EOF` (`fmt.Printf` *format string bug*) tetap dipertahankan.
 
 ---
 

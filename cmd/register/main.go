@@ -483,7 +483,7 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 	}
 	totalAccounts, err := strconv.Atoi(totalInput)
 	if err != nil {
-		fmt.Printf(ui.C("Error: invalid number '%s'.\n", ui.Red), totalInput)
+		fmt.Printf("%s\n", ui.C(fmt.Sprintf("Error: invalid number '%s'.", totalInput), ui.Red))
 		return
 	}
 
@@ -520,13 +520,13 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 
 		gmailPool, err = email.NewMultiGmailPool(listFiles)
 		if err != nil {
-			fmt.Printf(ui.C("Error loading Gmail lists: %v\n", ui.Red), err)
+			fmt.Printf("%s\n", ui.C(fmt.Sprintf("Error loading Gmail lists: %v", err), ui.Red))
 			return
 		}
 
 		// Cap total accounts to available emails
 		if totalAccounts > gmailPool.Remaining() {
-			fmt.Printf(ui.C("⚠ Only %d Gmail addresses available across all pools, reducing target from %d\n", ui.Yellow), gmailPool.Remaining(), totalAccounts)
+			fmt.Printf("%s\n", ui.C(fmt.Sprintf("⚠ Only %d Gmail addresses available across all pools, reducing target from %d", gmailPool.Remaining(), totalAccounts), ui.Yellow))
 			totalAccounts = gmailPool.Remaining()
 		}
 	}
