@@ -142,6 +142,10 @@ func main() {
 			printHelpGuide(reader)
 		case "4":
 			exportTokensTXT(reader)
+		case "5":
+			register.ImportTo9Router()
+			fmt.Printf(ui.C("\nTekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
+			reader.ReadString('\n')
 		case "0":
 			fmt.Println(ui.C("Goodbye! 👋", ui.Cyan))
 			return
@@ -230,6 +234,7 @@ func printMainMenu(cfg *config.Config) {
 	fmt.Println(ui.C("🔧 [2] Edit Configuration & Gmail Accounts", ui.Yellow))
 	fmt.Println(ui.C("📚 [3] Bantuan & Panduan Penggunaan", ui.Cyan))
 	fmt.Println(ui.C("💾 [4] Export Semua Token ke TXT", ui.Purple))
+	fmt.Println(ui.C("🤖 [5] Import Semua Token ke 9Router", ui.Cyan))
 	fmt.Println(ui.C("❌ [0] Exit", ui.Red))
 	fmt.Println(ui.C("────────────────────────────────────────────────────", ui.Cyan))
 }
