@@ -161,10 +161,6 @@ func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig
 		cfg.GmailPool.MarkConsumed(emailAddr)
 	}
 
-	if tokenResult != nil {
-		saveTokensPerBase(emailAddr, tokenResult, cfg.GmailMode)
-	}
-
 	// Append to generic text output file
 	fileMutex.Lock()
 	f, fileErr := os.OpenFile(cfg.OutputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
