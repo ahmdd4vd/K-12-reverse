@@ -84,6 +84,16 @@ Kami sangat terbuka untuk *Pull Request*. Jika Anda memiliki optimasi struktur, 
 
 ---
 
+## ☕ Dukung Proyek Ini (Donate)
+
+Jika *tool* K12-Reverse ini telah membantu menghemat waktu Anda, membantu pekerjaan Anda dengan Codex, atau Anda sekadar ingin memberikan dukungan untuk kelanjutan pengembangannya, Anda bisa mentraktir saya secangkir kopi:
+
+[![Donate via Trakteer](https://img.shields.io/badge/Traktir_Kopi-Trakteer-red?style=for-the-badge&logo=kofi&logoColor=white)](https://trakteer.id/ahmad_david11/tip)
+
+Dukungan Anda sangat berarti untuk membiayai infrastruktur eksperimen dan waktu pengembangan di rilis-rilis selanjutnya!
+
+---
+
 ## 📜 Lisensi
 
 Proyek ini didistribusikan di bawah **MIT License**. Anda bebas menggunakan, memodifikasi, dan mendistribusikan perangkat lunak ini. Lihat file `LICENSE` untuk detail lebih lanjut.
