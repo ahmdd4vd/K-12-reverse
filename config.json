@@ -4,9 +4,7 @@
   "token_output_file": "accounts.json",
   "default_password": "",
   "default_domain": "",
-  "k12_workspace_ids": [
-    "ff598c4d-ccaf-40c1-bfaa-cb94565764b1"
-  ],
+  "k12_workspace_ids": [],
   "enable_k12_invite": true,
   "gmail_mode": true,
   "gmail_accounts": []
