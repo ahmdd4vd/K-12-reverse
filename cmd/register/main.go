@@ -64,8 +64,11 @@ func main() {
 			fmt.Printf("    Sisa target   : %d Akun\n", sess.Remaining)
 			fmt.Printf("    Worker dipakai: %d Worker\n\n", sess.MaxWorkers)
 			fmt.Printf(ui.C("Lanjutkan sesi ini? (Y/n): ", ui.Yellow))
-
-			optInput, _ := reader.ReadString('\n')
+			optInput, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("\nInput stream closed. Exiting...")
+				return
+			}
 			optInput = strings.TrimSpace(strings.ToLower(optInput))
 
 			if optInput == "" || optInput == "y" {
@@ -119,8 +122,12 @@ func main() {
 		ui.ClearScreen()
 		ui.PrintBanner()
 		printMainMenu(cfg)
-		fmt.Printf(ui.C("💡 Pilih opsi (default: 1): ", ui.Yellow))
-		optInput, _ := reader.ReadString('\n')
+		optInput, err := reader.ReadString('\n')
+		if err != nil {
+			// Stop infinite loops when stdin is closed/EOF (e.g. piped input completes or fails)
+			fmt.Println("\nInput stream closed. Exiting...")
+			return
+		}
 		optInput = strings.TrimSpace(optInput)
 		if optInput == "" {
 			optInput = "1"
@@ -470,7 +477,11 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 	fmt.Println(ui.C("\n=== Start Registration ===", ui.Cyan))
 
 	fmt.Printf(ui.C("Total accounts to register: ", ui.Yellow))
-	totalInput, _ := reader.ReadString('\n')
+	totalInput, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("\nInput stream closed. Exiting...")
+		return
+	}
 	totalInput = strings.TrimSpace(totalInput)
 
 	if totalInput == "" {
@@ -485,7 +496,11 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 
 	defaultWorkers := 3
 	fmt.Printf(ui.C(fmt.Sprintf("Max concurrent workers (default: %d): ", defaultWorkers), ui.Yellow))
-	workersInput, _ := reader.ReadString('\n')
+	workersInput, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("\nInput stream closed. Exiting...")
+		return
+	}
 	workersInput = strings.TrimSpace(workersInput)
 
 	maxWorkers := defaultWorkers
@@ -539,7 +554,11 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 	fmt.Println()
 
 	fmt.Printf(ui.C("[?] Lanjut jalankan? (Y/n): ", ui.Yellow))
-	confirmInput, _ := reader.ReadString('\n')
+	confirmInput, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("\nInput stream closed. Exiting...")
+		return
+	}
 	confirmInput = strings.TrimSpace(strings.ToLower(confirmInput))
 	if confirmInput != "" && confirmInput != "y" {
 		fmt.Println(ui.C("❌ Dibatalkan.", ui.Red))

@@ -60,6 +60,29 @@ func getBaseEmail(emailAddr string) string {
 	return strings.ReplaceAll(parts[0], ".", "") + "@" + parts[1]
 }
 
+// isEmailAlreadyRegistered checks if an email is present in the specified JSON file.
+func isEmailAlreadyRegistered(emailAddr string, tokenFile string) bool {
+	existingData, err := os.ReadFile(tokenFile)
+	if err != nil {
+		return false
+	}
+	if len(existingData) == 0 {
+		return false
+	}
+	var tokens []*TokenResult
+	if err := json.Unmarshal(existingData, &tokens); err != nil {
+		return false
+	}
+
+	cleanEmail := strings.ToLower(strings.TrimSpace(emailAddr))
+	for _, t := range tokens {
+		if t != nil && strings.ToLower(strings.TrimSpace(t.Email)) == cleanEmail {
+			return true
+		}
+	}
+	return false
+}
+
 // registerOne handles a single account registration.
 func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig, registeredEmails map[string]bool, printMu *sync.Mutex) (bool, string, string, *TokenResult) {
 	select {
@@ -84,7 +107,17 @@ func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig
 			if err != nil {
 				return false, "", fmt.Sprintf("no more Gmail addresses: %v", err), nil
 			}
-			if !registeredEmails[emailAddr] {
+			
+			// Lock fileMutex while verifying both in-memory map and JSON file on disk
+			fileMutex.Lock()
+			baseEmail = getBaseEmail(emailAddr)
+			username := strings.Split(baseEmail, "@")[0]
+			tokenFile := filepath.Join("data", fmt.Sprintf("accounts_%s.json", username))
+			
+			isReg := registeredEmails[strings.ToLower(strings.TrimSpace(emailAddr))] || isEmailAlreadyRegistered(emailAddr, tokenFile)
+			fileMutex.Unlock()
+
+			if !isReg {
 				break
 			}
 		}
@@ -137,7 +170,7 @@ func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig
 
 	if err != nil {
 		// Handle Zombie auto-purge & Rescue
-		if cfg.GmailMode && (strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "profile") || strings.Contains(err.Error(), "log-in/password")) {
+		if cfg.GmailMode && (strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "profile") || strings.Contains(err.Error(), "log-in/password") || strings.Contains(err.Error(), "zombie_detected")) {
 			printMu.Lock()
 			fmt.Printf("[%s] 🔄 Zombie detected! Switching to Login Mode for %s...\n", time.Now().Format("15:04:05"), emailAddr)
 			printMu.Unlock()
@@ -152,6 +185,15 @@ func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig
 				return false, emailAddr, "Zombie Login Failed: " + err.Error(), nil
 			}
 		} else {
+			if cfg.GmailMode {
+				errStr := err.Error()
+				if strings.Contains(errStr, "failed to get OTP") ||
+					strings.Contains(errStr, "failed to auto-read OTP") ||
+					strings.Contains(errStr, "verification code failed") ||
+					strings.Contains(errStr, "OTP") {
+					cfg.GmailPool.MarkConsumed(emailAddr) // Shrink list
+				}
+			}
 			return false, emailAddr, err.Error(), nil
 		}
 	}
@@ -213,7 +255,9 @@ func RunBatch(cfg *BatchConfig) {
 				var tokens []*TokenResult
 				if json.Unmarshal(existingData, &tokens) == nil {
 					for _, t := range tokens {
-						registeredEmails[t.Email] = true
+						if t != nil {
+							registeredEmails[strings.ToLower(strings.TrimSpace(t.Email))] = true
+						}
 					}
 				}
 			}
@@ -321,7 +365,10 @@ func RunBatch(cfg *BatchConfig) {
 				if success {
 					atomic.AddInt64(&successCount, 1)
 					ts := time.Now().Format("15:04:05")
-
+					// Safely add registered email to map under lock
+					fileMutex.Lock()
+					registeredEmails[strings.ToLower(strings.TrimSpace(emailAddr))] = true
+					fileMutex.Unlock()
 					printMu.Lock()
 					if cfg.GmailMode {
 						base := getBaseEmail(emailAddr)

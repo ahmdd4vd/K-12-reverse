@@ -24,10 +24,49 @@ type GmailIMAPConfig struct {
 
 var IMAPMutex sync.Mutex
 
-// GetVerificationCodeViaIMAP connects to Gmail IMAP and retrieves the OTP code from OpenAI emails.
-func GetVerificationCodeViaIMAP(ctx context.Context, cfg GmailIMAPConfig, targetEmail string, maxRetries int, delay time.Duration) (string, error) {
-	otpRegex := regexp.MustCompile(`\b(\d{6})\b`)
+// GetLatestUID connects to Gmail IMAP and returns the highest UID currently in the inbox.
+// This is used to establish a baseline before requesting a new OTP.
+func GetLatestUID(cfg GmailIMAPConfig) (uint32, error) {
+	c, err := client.DialTLS("imap.gmail.com:993", nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to connect to IMAP: %w", err)
+	}
+	defer c.Logout()
 
+	if err := c.Login(cfg.Email, cfg.AppPassword); err != nil {
+		return 0, fmt.Errorf("IMAP login failed: %w", err)
+	}
+
+	mbox, err := c.Select("INBOX", true)
+	if err != nil {
+		return 0, fmt.Errorf("failed to select INBOX: %w", err)
+	}
+
+	// The highest UID in the mailbox is mbox.UidNext - 1 (approximately)
+	// But to be completely safe, we can search all messages and find the max UID.
+	criteria := imap.NewSearchCriteria()
+	criteria.Since = time.Now().Add(-1 * time.Hour) // only check last hour to be fast
+	uids, err := c.Search(criteria)
+	if err != nil || len(uids) == 0 {
+		// Fallback to UidNext - 1 if search fails or inbox is empty in the last hour
+		if mbox.UidNext > 1 {
+			return mbox.UidNext - 1, nil
+		}
+		return 0, nil
+	}
+
+	var maxUID uint32
+	for _, uid := range uids {
+		if uid > maxUID {
+			maxUID = uid
+		}
+	}
+	return maxUID, nil
+}
+
+// GetVerificationCodeViaIMAP connects to Gmail IMAP and retrieves the OTP code from OpenAI emails.
+// It only considers emails with a UID greater than startUID.
+func GetVerificationCodeViaIMAP(ctx context.Context, cfg GmailIMAPConfig, targetEmail string, startUID uint32, maxRetries int, delay time.Duration) (string, error) {
 	for i := 0; i < maxRetries; i++ {
 		select {
 		case <-ctx.Done():
@@ -37,12 +76,15 @@ func GetVerificationCodeViaIMAP(ctx context.Context, cfg GmailIMAPConfig, target
 
 		// The Mutex is now locked BEFORE c.sendOTP() in the worker flow,
 		// so we DO NOT lock it here anymore to prevent deadlocks!
-		code, err := fetchOTPFromGmail(cfg, targetEmail, otpRegex)
+		code, err := fetchOTPFromGmail(cfg, targetEmail, startUID)
 
 		if err == nil && code != "" {
 			return code, nil
 		}
 		if err != nil {
+			if strings.Contains(err.Error(), "login failed") || strings.Contains(err.Error(), "Login failed") || strings.Contains(err.Error(), "credential") {
+				return "", err
+			}
 			fmt.Printf("[IMAP Check %d/%d] Waiting for OTP email to arrive in inbox...\n", i+1, maxRetries)
 		}
 
@@ -59,7 +101,8 @@ func GetVerificationCodeViaIMAP(ctx context.Context, cfg GmailIMAPConfig, target
 }
 
 // fetchOTPFromGmail connects to Gmail IMAP and searches for OTP in recent OpenAI emails.
-func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp.Regexp) (string, error) {
+// Only emails with a UID greater than startUID are considered.
+func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, startUID uint32) (string, error) {
 	// Connect to Gmail IMAP over TLS
 	dialer := &net.Dialer{Timeout: 30 * time.Second}
 	c, err := client.DialWithDialerTLS(dialer, "imap.gmail.com:993", &tls.Config{ServerName: "imap.gmail.com"})
@@ -74,31 +117,42 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 		return "", fmt.Errorf("IMAP login failed: %w", err)
 	}
 
-	// Select INBOX
+	// Select INBOX (read-write so we can mark as Seen)
 	_, err = c.Select("INBOX", false)
 	if err != nil {
 		return "", fmt.Errorf("failed to select INBOX: %w", err)
 	}
 
-	// Search for emails from the last 2 hours (we filter by 5 mins later, but this reduces search space)
+	// Search for ALL emails from the last 2 hours
 	criteria := imap.NewSearchCriteria()
 	criteria.Since = time.Now().Add(-2 * time.Hour)
-	criteria.WithoutFlags = []string{imap.SeenFlag}
 	uids, err := c.Search(criteria)
 	if err != nil {
 		return "", fmt.Errorf("search error: %w", err)
 	}
 	if len(uids) == 0 {
-		return "", fmt.Errorf("no unread emails")
+		return "", fmt.Errorf("no emails")
 	}
 
-	// Limit to the last 20 emails to prevent fetching thousands of unread emails
-	if len(uids) > 20 {
-		uids = uids[len(uids)-20:]
+	// Filter uids to only include those greater than startUID
+	var filteredUIDs []uint32
+	for _, uid := range uids {
+		if uid > startUID {
+			filteredUIDs = append(filteredUIDs, uid)
+		}
+	}
+
+	if len(filteredUIDs) == 0 {
+		return "", fmt.Errorf("no new emails since UID %d", startUID)
+	}
+
+	// Limit to prevent fetching thousands
+	if len(filteredUIDs) > 30 {
+		filteredUIDs = filteredUIDs[len(filteredUIDs)-30:]
 	}
 
 	seqSet := new(imap.SeqSet)
-	seqSet.AddNum(uids...)
+	seqSet.AddNum(filteredUIDs...)
 
 	// Fetch messages
 	messages := make(chan *imap.Message, 100)
@@ -115,9 +169,16 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 		allMessages = append(allMessages, msg)
 	}
 
+	bodyOTPRegex := regexp.MustCompile(`(?:^|[^a-zA-Z0-9])([0-9]{6})(?:[^a-zA-Z0-9]|$)`)
+
 	for i := len(allMessages) - 1; i >= 0; i-- {
 		msg := allMessages[i]
 		if msg == nil || msg.Envelope == nil {
+			continue
+		}
+
+		// Double check UID constraint
+		if msg.Uid <= startUID {
 			continue
 		}
 
@@ -146,12 +207,22 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 			continue
 		}
 
+		// EXACT To-address matching: only match the specific dot-trick variant
 		isForTarget := false
 		for _, toAddr := range msg.Envelope.To {
 			fullAddr := strings.ToLower(toAddr.MailboxName + "@" + toAddr.HostName)
 
-			// EXACT MATCH ONLY: Ensures workers don't steal each other's emails
+			// Exact match (preserving dots)
 			if strings.EqualFold(fullAddr, targetEmail) {
+				isForTarget = true
+				break
+			}
+
+			// For dot-tricks, OpenAI preserves the exact dots in the To header.
+			// Only use normalized comparison as a fallback for edge cases.
+			normalizedFullAddr := strings.ReplaceAll(fullAddr, ".", "")
+			normalizedTargetEmail := strings.ReplaceAll(strings.ToLower(targetEmail), ".", "")
+			if normalizedFullAddr == normalizedTargetEmail {
 				isForTarget = true
 				break
 			}
@@ -161,22 +232,13 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 			continue
 		}
 
-		// EXTRA PROTECTION: Only parse emails from the last 5 minutes
-		if time.Since(msg.Envelope.Date) > 5*time.Minute {
-			continue
-		}
-
 		// Check subject for OTP
 		matches := regexp.MustCompile(`\b([0-9]{6})\b`).FindStringSubmatch(subject)
 		if len(matches) > 1 {
 			otp := matches[1]
 			if otp != "177010" {
 				// Mark as read
-				item := imap.FormatFlagsOp(imap.AddFlags, true)
-				flags := []interface{}{imap.SeenFlag}
-				seq := new(imap.SeqSet)
-				seq.AddNum(msg.SeqNum)
-				c.Store(seq, item, flags, nil)
+				markAsRead(c, msg.SeqNum)
 				return otp, nil
 			}
 		}
@@ -187,12 +249,18 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 				continue
 			}
 
-			// We need a string of the body to parse MIME
 			mr, err := mail.CreateReader(body)
 			if err != nil {
-				// Fallback to raw string if mail parser fails (rare)
-				// Wait, CreateReader consumes the reader, so we can't easily fallback.
-				// But CreateReader works on raw RFC822 messages.
+				// Fallback: try to find OTP in raw body
+				raw, readErr := io.ReadAll(body)
+				if readErr == nil {
+					rawStr := string(raw)
+					code := extractOTPFromText(bodyOTPRegex, rawStr)
+					if code != "" {
+						markAsRead(c, msg.SeqNum)
+						return code, nil
+					}
+				}
 				continue
 			}
 
@@ -207,33 +275,16 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 
 				switch p.Header.(type) {
 				case *mail.InlineHeader:
-					// This is the message's text (can be plain-text or HTML)
 					b, err := io.ReadAll(p.Body)
 					if err != nil {
 						continue
 					}
 					bodyStr := string(b)
 
-					// Find all exact 6 digit numbers (we use [^a-zA-Z0-9] to match boundaries
-					// manually since HTML might not have \b where we expect)
-					// Find all exact 6 digit numbers using word boundaries and also handling HTML
-					re := regexp.MustCompile(`(?:^|[^a-zA-Z0-9])([0-9]{6})(?:[^a-zA-Z0-9]|$)`)
-					allMatches := re.FindAllStringSubmatch(bodyStr, -1)
-
-					for _, m := range allMatches {
-						if len(m) > 1 {
-							code := m[1]
-							// Ensure it's not the color code or font weight or something from OpenAI HTML
-							if code != "202123" && code != "177010" && code != "353740" && code != "140626" {
-								// Mark as read
-								item := imap.FormatFlagsOp(imap.AddFlags, true)
-								flags := []interface{}{imap.SeenFlag}
-								seq := new(imap.SeqSet)
-								seq.AddNum(msg.SeqNum)
-								c.Store(seq, item, flags, nil)
-								return code, nil
-							}
-						}
+					code := extractOTPFromText(bodyOTPRegex, bodyStr)
+					if code != "" {
+						markAsRead(c, msg.SeqNum)
+						return code, nil
 					}
 				}
 			}
@@ -241,4 +292,33 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 	}
 
 	return "", fmt.Errorf("no OTP found in recent emails")
+}
+
+// extractOTPFromText extracts a 6-digit OTP from text, filtering out known CSS color codes
+func extractOTPFromText(re *regexp.Regexp, text string) string {
+	// Known false positives: CSS color codes and font-related numbers in OpenAI HTML emails
+	falsePositives := map[string]bool{
+		"202123": true, "177010": true, "353740": true,
+		"140626": true, "333333": true, "216706": true,
+	}
+
+	allMatches := re.FindAllStringSubmatch(text, -1)
+	for _, m := range allMatches {
+		if len(m) > 1 {
+			code := m[1]
+			if !falsePositives[code] {
+				return code
+			}
+		}
+	}
+	return ""
+}
+
+// markAsRead marks a message as Seen
+func markAsRead(c *client.Client, seqNum uint32) {
+	item := imap.FormatFlagsOp(imap.AddFlags, true)
+	flags := []interface{}{imap.SeenFlag}
+	seq := new(imap.SeqSet)
+	seq.AddNum(seqNum)
+	c.Store(seq, item, flags, nil)
 }
