@@ -1,6 +1,7 @@
 package email
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -67,6 +68,19 @@ func AddBlacklistDomain(domain string) {
 	blacklistedDomains.Store(domain, true)
 	saveBlacklist()
 }
+
+func waitContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // CreateTempEmail fetches a new temp email using a random profile and gofakeit names.
 func CreateTempEmail(defaultDomain string) (string, error) {
 	// If defaultDomain is set, skip fetching from generator.email
@@ -79,6 +93,7 @@ func CreateTempEmail(defaultDomain string) (string, error) {
 
 	options := []tls_client.HttpClientOption{
 		tls_client.WithClientProfile(profiles.Chrome_131),
+		tls_client.WithTimeoutSeconds(60),
 	}
 
 	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
@@ -131,7 +146,7 @@ func CreateTempEmail(defaultDomain string) (string, error) {
 }
 
 // GetVerificationCode polls generator.email for the OTP using a custom cookie.
-func GetVerificationCode(email string, maxRetries int, delay time.Duration) (string, error) {
+func GetVerificationCode(ctx context.Context, email string, maxRetries int, delay time.Duration) (string, error) {
 	parts := strings.Split(email, "@")
 	if len(parts) != 2 {
 		return "", fmt.Errorf("invalid email format: %s", email)
@@ -142,8 +157,15 @@ func GetVerificationCode(email string, maxRetries int, delay time.Duration) (str
 	otpRegex := regexp.MustCompile(`\d{6}`)
 
 	for i := 0; i < maxRetries; i++ {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
 		options := []tls_client.HttpClientOption{
 			tls_client.WithClientProfile(profiles.Chrome_131),
+			tls_client.WithTimeoutSeconds(60),
 		}
 
 		client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
@@ -152,7 +174,7 @@ func GetVerificationCode(email string, maxRetries int, delay time.Duration) (str
 		}
 
 		url := fmt.Sprintf("https://generator.email/%s/%s", domain, username)
-		req, err := fhttp.NewRequest(http.MethodGet, url, nil)
+		req, err := fhttp.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return "", fmt.Errorf("failed to create request: %w", err)
 		}
@@ -163,20 +185,26 @@ func GetVerificationCode(email string, maxRetries int, delay time.Duration) (str
 		resp, err := client.Do(req)
 		if err != nil {
 			// Log error and continue retrying
-			time.Sleep(delay)
+			if err := waitContext(ctx, delay); err != nil {
+				return "", err
+			}
 			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			time.Sleep(delay)
+			if err := waitContext(ctx, delay); err != nil {
+				return "", err
+			}
 			continue
 		}
 
 		doc, err := goquery.NewDocumentFromReader(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			time.Sleep(delay)
+			if err := waitContext(ctx, delay); err != nil {
+				return "", err
+			}
 			continue
 		}
 
@@ -201,7 +229,9 @@ func GetVerificationCode(email string, maxRetries int, delay time.Duration) (str
 			return otp, nil
 		}
 
-		time.Sleep(delay)
+		if err := waitContext(ctx, delay); err != nil {
+			return "", err
+		}
 	}
 
 	return "", fmt.Errorf("failed to get verification code after %d retries", maxRetries)

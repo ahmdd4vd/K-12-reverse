@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"sync"
+
 	"github.com/verssache/chatgpt-creator/internal/email"
 	"github.com/verssache/chatgpt-creator/internal/register"
-	"sync"
 )
 
 func main() {
@@ -24,8 +26,8 @@ func main() {
 	}
 
 	fmt.Println("Running test login flow for:", emailAddr)
-	
-	res, err := client.RunLogin(emailAddr, password, nil, imapCfg)
+
+	res, err := client.RunLogin(context.Background(), emailAddr, password, nil, imapCfg)
 	if err != nil {
 		fmt.Printf("RunLogin failed with error: %v\n", err)
 	} else if res != nil {

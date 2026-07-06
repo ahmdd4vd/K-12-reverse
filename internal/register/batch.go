@@ -1,6 +1,7 @@
 package register
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,6 +22,7 @@ import (
 // BatchConfig holds all batch registration settings.
 type BatchConfig struct {
 	TotalAccounts   int
+	MaxAttempts     int
 	OutputFile      string
 	MaxWorkers      int
 	Proxy           string
@@ -37,6 +39,19 @@ type BatchConfig struct {
 // Global mutex for file writing to prevent corruption
 var fileMutex sync.Mutex
 
+func shouldRefundFailure(ctx context.Context, attemptNum int64, maxAttempts int, gmailMode bool, gmailRemaining int) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	if attemptNum >= int64(maxAttempts) {
+		return false
+	}
+	if !gmailMode {
+		return true
+	}
+	return gmailRemaining > 0
+}
+
 func getBaseEmail(emailAddr string) string {
 	parts := strings.Split(emailAddr, "@")
 	if len(parts) != 2 {
@@ -46,7 +61,13 @@ func getBaseEmail(emailAddr string) string {
 }
 
 // registerOne handles a single account registration.
-func registerOne(workerID int, tag string, cfg *BatchConfig, registeredEmails map[string]bool, printMu *sync.Mutex) (bool, string, string, *TokenResult) {
+func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig, registeredEmails map[string]bool, printMu *sync.Mutex) (bool, string, string, *TokenResult) {
+	select {
+	case <-ctx.Done():
+		return false, "", ctx.Err().Error(), nil
+	default:
+	}
+
 	client, err := NewClient(cfg.Proxy, tag, workerID, printMu, &fileMutex)
 	if err != nil {
 		return false, "", fmt.Sprintf("failed to create client: %v", err), nil
@@ -108,8 +129,8 @@ func registerOne(workerID int, tag string, cfg *BatchConfig, registeredEmails ma
 		}
 	}
 
-	tokenResult, err := client.RunRegister(emailAddr, password, firstName+" "+lastName, birthdate, cfg.K12WorkspaceIDs, gmailIMAP)
-	
+	tokenResult, err := client.RunRegister(ctx, emailAddr, password, firstName+" "+lastName, birthdate, cfg.K12WorkspaceIDs, gmailIMAP)
+
 	if tokenResult != nil {
 		tokenResult.Password = password
 	}
@@ -120,12 +141,12 @@ func registerOne(workerID int, tag string, cfg *BatchConfig, registeredEmails ma
 			printMu.Lock()
 			fmt.Printf("[%s] 🔄 Zombie detected! Switching to Login Mode for %s...\n", time.Now().Format("15:04:05"), emailAddr)
 			printMu.Unlock()
-			
-			tokenResult, err = client.RunLogin(emailAddr, password, cfg.K12WorkspaceIDs, gmailIMAP)
+
+			tokenResult, err = client.RunLogin(ctx, emailAddr, password, cfg.K12WorkspaceIDs, gmailIMAP)
 			if tokenResult != nil {
 				tokenResult.Password = password
 			}
-			
+
 			if err != nil {
 				cfg.GmailPool.MarkConsumed(emailAddr) // Shrink list
 				return false, emailAddr, "Zombie Login Failed: " + err.Error(), nil
@@ -165,6 +186,15 @@ func registerOne(workerID int, tag string, cfg *BatchConfig, registeredEmails ma
 // RunBatch runs concurrent registration tasks with retry until target success count is reached.
 func RunBatch(cfg *BatchConfig) {
 	var printMu sync.Mutex
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = cfg.TotalAccounts * 3
+	}
+	if cfg.MaxAttempts < cfg.TotalAccounts {
+		cfg.MaxAttempts = cfg.TotalAccounts
+	}
 
 	var remaining int64 = int64(cfg.TotalAccounts)
 	var successCount int64
@@ -195,10 +225,12 @@ func RunBatch(cfg *BatchConfig) {
 	// Graceful Exit Handler
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 	go func() {
 		<-sigCh
-		fmt.Println(ui.C("\n[!] Menerima sinyal berhenti (Ctrl+C). Menunggu worker yang sedang jalan selesai (Graceful Exit)...", ui.Yellow))
-		atomic.StoreInt64(&remaining, 0) // Stop accepting new tasks
+		fmt.Println(ui.C("\n🛑 Graceful shutdown requested. Canceling active workers...", ui.Yellow))
+		atomic.StoreInt64(&remaining, 0)
+		cancel()
 	}()
 
 	// Session check and save
@@ -213,17 +245,20 @@ func RunBatch(cfg *BatchConfig) {
 	// Goroutine to periodically save state
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
 		for {
 			select {
-			case <-sigCh:
-				return // stop saving if graceful exit triggered
+			case <-ctx.Done():
+				return
 			case <-ticker.C:
 				rem := atomic.LoadInt64(&remaining)
 				if rem <= 0 {
-					os.Remove(filepath.Join("data", "session.json"))
+					if ctx.Err() == nil {
+						os.Remove(filepath.Join("data", "session.json"))
+					}
 					return
 				}
-				
+
 				sess := SessionData{
 					TotalAccounts: int64(cfg.TotalAccounts),
 					MaxWorkers:    cfg.MaxWorkers,
@@ -231,7 +266,7 @@ func RunBatch(cfg *BatchConfig) {
 					FailCount:     atomic.LoadInt64(&failureCount),
 					Remaining:     rem,
 				}
-				
+
 				data, _ := json.MarshalIndent(sess, "", "  ")
 				os.WriteFile(filepath.Join("data", "session.json"), data, 0644)
 			}
@@ -249,20 +284,44 @@ func RunBatch(cfg *BatchConfig) {
 		go func(workerID int) {
 			defer wg.Done()
 			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
 				// Claim a slot before starting work
 				if atomic.AddInt64(&remaining, -1) < 0 {
 					atomic.AddInt64(&remaining, 1)
 					return
 				}
 
-				attempt := atomic.AddInt64(&attemptNum, 1)
-				tag := fmt.Sprintf("%d/%d", attempt, cfg.TotalAccounts)
+				var attempt int64
+				reserved := false
+				for !reserved {
+					current := atomic.LoadInt64(&attemptNum)
+					if current >= int64(cfg.MaxAttempts) {
+						atomic.AddInt64(&remaining, 1)
+						if atomic.SwapInt64(&remaining, 0) > 0 {
+							printMu.Lock()
+							fmt.Println(ui.C("⚠️ Max attempts reached; stopping retries.", ui.Yellow))
+							printMu.Unlock()
+						}
+						return
+					}
+					if atomic.CompareAndSwapInt64(&attemptNum, current, current+1) {
+						attempt = current + 1
+						reserved = true
+					}
+				}
 
-				success, emailAddr, errStr, tokenResult := registerOne(workerID, tag, cfg, registeredEmails, &printMu)
+				tag := fmt.Sprintf("%d/%d", attempt, cfg.MaxAttempts)
+
+				success, emailAddr, errStr, tokenResult := registerOne(ctx, workerID, tag, cfg, registeredEmails, &printMu)
 				if success {
 					atomic.AddInt64(&successCount, 1)
 					ts := time.Now().Format("15:04:05")
-					
+
 					printMu.Lock()
 					if cfg.GmailMode {
 						base := getBaseEmail(emailAddr)
@@ -283,13 +342,13 @@ func RunBatch(cfg *BatchConfig) {
 				} else {
 					atomic.AddInt64(&failureCount, 1)
 
-					// In Gmail mode, don't retry with same email (it's consumed or failed)
-					if !cfg.GmailMode {
+					gmailRemaining := 0
+					if cfg.GmailPool != nil {
+						gmailRemaining = cfg.GmailPool.Remaining()
+					}
+
+					if shouldRefundFailure(ctx, atomic.LoadInt64(&attemptNum), cfg.MaxAttempts, cfg.GmailMode, gmailRemaining) {
 						atomic.AddInt64(&remaining, 1)
-					} else {
-						if cfg.GmailPool != nil && cfg.GmailPool.Remaining() > 0 {
-							atomic.AddInt64(&remaining, 1) // Retry with next email
-						}
 					}
 
 					ts := time.Now().Format("15:04:05")
@@ -319,11 +378,14 @@ func RunBatch(cfg *BatchConfig) {
 	}
 
 	wg.Wait()
+	if ctx.Err() == nil {
+		os.Remove(filepath.Join("data", "session.json"))
+	}
 
 	elapsed := time.Since(startTime)
 	elapsedStr := formatDuration(elapsed)
 
-	fmt.Printf(ui.C("\n--- Batch Registration Summary ---\n", ui.Cyan))
+	fmt.Print(ui.C("\n--- Batch Registration Summary ---\n", ui.Cyan))
 	fmt.Printf("Target:    %d\n", cfg.TotalAccounts)
 	fmt.Printf("Success:   %s\n", ui.C(fmt.Sprintf("%d", successCount), ui.Green))
 	fmt.Printf("Attempts:  %d\n", attemptNum)

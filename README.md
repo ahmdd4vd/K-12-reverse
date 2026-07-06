@@ -22,7 +22,7 @@ K12-Reverse adalah *tool* berbasis Go (Golang) untuk melakukan registrasi akun C
 
 Sebelum menjalankan program ini, pastikan mesin atau server Anda telah terinstal:
 
-- **Go (Golang)**: Versi 1.20 atau yang lebih baru.
+- **Go (Golang)**: Versi sesuai `go.mod` (`go 1.25.5`).
 - **Koneksi Internet Stabil**: Disarankan menggunakan Proxy berkualitas (Residential/Static) untuk menghindari limitasi *rate-limit* dari Cloudflare/OpenAI.
 - **Akun Gmail**: Akun Gmail utama (*base email*) beserta **App Password**-nya (Sandi Aplikasi).
 
@@ -40,8 +40,8 @@ Demi keamanan, Anda tidak bisa menggunakan kata sandi asli Gmail. Anda harus mem
 
 1. **Kloning Repositori**
    ```bash
-   git clone https://github.com/ahmadd4vd/k12-reverse.git
-   cd k12-reverse
+   git clone https://github.com/ahmdd4vd/K-12-reverse.git
+   cd K-12-reverse
    ```
 
 2. **Jalankan Program**
@@ -50,11 +50,21 @@ Demi keamanan, Anda tidak bisa menggunakan kata sandi asli Gmail. Anda harus mem
    go run cmd/register/main.go
    ```
 
+   Perintah manual lain yang tersedia:
+   ```bash
+   go run cmd/generator/main.go <email> <output_file>
+   GMAIL_BASE=x GMAIL_APP_PASSWORD=y go run cmd/checkmail/main.go
+   go run cmd/testotp/main.go
+   go run test_auth.go
+   go build -o k12-creator ./cmd/register
+   ```
+
 3. **Konfigurasi via CLI**
    Pilih opsi **[2] Edit Configuration & Gmail Accounts**. Anda akan dipandu untuk:
    - Memasukkan *Base Email* (contoh: `nama.email@gmail.com`).
    - Memasukkan *App Password* yang baru saja Anda buat.
    - Mengatur URL Proxy (opsional).
+   - `PROXY=<proxy_url> go run cmd/register/main.go` overrides `config.json.proxy`.
    - *Tool* akan otomatis menghasilkan variasi Dot-Trick dan menyimpannya di direktori `data/`.
 
 4. **Mulai Registrasi**

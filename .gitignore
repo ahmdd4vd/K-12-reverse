@@ -1,10 +1,22 @@
 # Binary output
 chatgpt-creator
+k12-creator
+k12-creator.exe
+*.exe
 
 # OS files
 .DS_Store
 
-# Config and Results
+# Local config and runtime outputs
+config.json
 results.txt
+export_tokens.txt
+accounts.json
 blacklist.json
-results.txt
+data/session.json
+data/accounts_*.json
+data/list_*.txt
+
+# Local agent state
+.slim/deepwork/
+docs/
