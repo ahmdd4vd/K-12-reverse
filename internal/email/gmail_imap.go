@@ -1,8 +1,11 @@
 package email
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"regexp"
 	"strings"
 	"sync"
@@ -22,11 +25,17 @@ type GmailIMAPConfig struct {
 var IMAPMutex sync.Mutex
 
 // GetVerificationCodeViaIMAP connects to Gmail IMAP and retrieves the OTP code from OpenAI emails.
-func GetVerificationCodeViaIMAP(cfg GmailIMAPConfig, targetEmail string, maxRetries int, delay time.Duration) (string, error) {
+func GetVerificationCodeViaIMAP(ctx context.Context, cfg GmailIMAPConfig, targetEmail string, maxRetries int, delay time.Duration) (string, error) {
 	otpRegex := regexp.MustCompile(`\b(\d{6})\b`)
 
 	for i := 0; i < maxRetries; i++ {
-		// The Mutex is now locked BEFORE c.sendOTP() in the worker flow, 
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		// The Mutex is now locked BEFORE c.sendOTP() in the worker flow,
 		// so we DO NOT lock it here anymore to prevent deadlocks!
 		code, err := fetchOTPFromGmail(cfg, targetEmail, otpRegex)
 
@@ -37,7 +46,13 @@ func GetVerificationCodeViaIMAP(cfg GmailIMAPConfig, targetEmail string, maxRetr
 			fmt.Printf("[IMAP Check %d/%d] Waiting for OTP email to arrive in inbox...\n", i+1, maxRetries)
 		}
 
-		time.Sleep(delay)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", ctx.Err()
+		case <-timer.C:
+		}
 	}
 
 	return "", fmt.Errorf("failed to get OTP from Gmail after %d retries", maxRetries)
@@ -46,10 +61,12 @@ func GetVerificationCodeViaIMAP(cfg GmailIMAPConfig, targetEmail string, maxRetr
 // fetchOTPFromGmail connects to Gmail IMAP and searches for OTP in recent OpenAI emails.
 func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp.Regexp) (string, error) {
 	// Connect to Gmail IMAP over TLS
-	c, err := client.DialTLS("imap.gmail.com:993", nil)
+	dialer := &net.Dialer{Timeout: 30 * time.Second}
+	c, err := client.DialWithDialerTLS(dialer, "imap.gmail.com:993", &tls.Config{ServerName: "imap.gmail.com"})
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to IMAP: %w", err)
 	}
+	c.Timeout = 30 * time.Second
 	defer c.Logout()
 
 	// Login with base Gmail + App Password
@@ -132,14 +149,14 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 		isForTarget := false
 		for _, toAddr := range msg.Envelope.To {
 			fullAddr := strings.ToLower(toAddr.MailboxName + "@" + toAddr.HostName)
-			
+
 			// EXACT MATCH ONLY: Ensures workers don't steal each other's emails
 			if strings.EqualFold(fullAddr, targetEmail) {
 				isForTarget = true
 				break
 			}
 		}
-		
+
 		if !isForTarget {
 			continue
 		}
@@ -169,7 +186,7 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 			if body == nil {
 				continue
 			}
-			
+
 			// We need a string of the body to parse MIME
 			mr, err := mail.CreateReader(body)
 			if err != nil {
@@ -196,13 +213,13 @@ func fetchOTPFromGmail(cfg GmailIMAPConfig, targetEmail string, otpRegex *regexp
 						continue
 					}
 					bodyStr := string(b)
-					
-					// Find all exact 6 digit numbers (we use [^a-zA-Z0-9] to match boundaries 
+
+					// Find all exact 6 digit numbers (we use [^a-zA-Z0-9] to match boundaries
 					// manually since HTML might not have \b where we expect)
 					// Find all exact 6 digit numbers using word boundaries and also handling HTML
 					re := regexp.MustCompile(`(?:^|[^a-zA-Z0-9])([0-9]{6})(?:[^a-zA-Z0-9]|$)`)
 					allMatches := re.FindAllStringSubmatch(bodyStr, -1)
-					
+
 					for _, m := range allMatches {
 						if len(m) > 1 {
 							code := m[1]

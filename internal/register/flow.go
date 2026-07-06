@@ -1,6 +1,7 @@
 package register
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -283,31 +284,42 @@ func (c *Client) callback(cbURL string) (int, map[string]interface{}, error) {
 	return resp.StatusCode, map[string]interface{}{"final_url": resp.Request.URL.String()}, nil
 }
 
-func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12WorkspaceIDs []string, gmailIMAP *email.GmailIMAPConfig) (*TokenResult, error) {
+func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, birthdate string, k12WorkspaceIDs []string, gmailIMAP *email.GmailIMAPConfig) (*TokenResult, error) {
 	c.print("Starting registration flow...")
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	if err := c.visitHomepage(); err != nil {
 		return nil, err
 	}
-	c.randomDelay(0.3, 0.8)
+	if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+		return nil, err
+	}
 
 	csrf, err := c.getCSRF()
 	if err != nil {
 		return nil, err
 	}
-	c.randomDelay(0.2, 0.5)
+	if err := c.randomDelay(ctx, 0.2, 0.5); err != nil {
+		return nil, err
+	}
 
 	authURL, err := c.signin(emailAddr, csrf, "signup")
 	if err != nil {
 		return nil, err
 	}
-	c.randomDelay(0.3, 0.8)
+	if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+		return nil, err
+	}
 
 	finalURL, err := c.authorize(authURL)
 	if err != nil {
 		return nil, err
 	}
-	c.randomDelay(0.3, 0.8)
+	if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+		return nil, err
+	}
 
 	u, _ := url.Parse(finalURL)
 	finalPath := u.Path
@@ -317,7 +329,9 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 	var otpCbURL string
 
 	if strings.Contains(finalPath, "create-account/password") {
-		c.randomDelay(0.5, 1.0)
+		if err := c.randomDelay(ctx, 0.5, 1.0); err != nil {
+			return nil, err
+		}
 		status, data, err := c.register(emailAddr, password)
 		if err != nil {
 			return nil, err
@@ -325,7 +339,9 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		if status != 200 {
 			return nil, fmt.Errorf("register failed (%d): %v", status, data)
 		}
-		c.randomDelay(0.3, 0.8)
+		if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+			return nil, err
+		}
 		// c.sendOTP() is handled in the block below instead
 		needOTP = true
 		needsManualOTPRequest = true
@@ -335,7 +351,9 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		needOTP = true
 	} else if strings.Contains(finalPath, "about-you") {
 		c.print("Jump to fill information stage")
-		c.randomDelay(0.5, 1.0)
+		if err := c.randomDelay(ctx, 0.5, 1.0); err != nil {
+			return nil, err
+		}
 		status, data, err := c.createAccount(name, birthdate)
 		if err != nil {
 			return nil, err
@@ -343,7 +361,9 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		if status != 200 {
 			return nil, fmt.Errorf("create account failed (%d): %v", status, data)
 		}
-		c.randomDelay(0.3, 0.5)
+		if err := c.randomDelay(ctx, 0.3, 0.5); err != nil {
+			return nil, err
+		}
 
 		if u, ok := data["continue_url"].(string); ok {
 			otpCbURL = u
@@ -352,12 +372,17 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		} else if u, ok := data["redirect_url"].(string); ok {
 			otpCbURL = u
 		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		c.callback(otpCbURL)
 
 		// K12 invite + token extraction
 		if len(k12WorkspaceIDs) > 0 {
-			c.randomDelay(1.0, 2.0)
-			return c.RunK12Flow(k12WorkspaceIDs, emailAddr, gmailIMAP)
+			if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
+				return nil, err
+			}
+			return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 		}
 		return nil, nil
 	} else if strings.Contains(finalPath, "callback") || strings.Contains(finalURL, "chatgpt.com") {
@@ -365,8 +390,10 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 
 		// K12 invite + token extraction
 		if len(k12WorkspaceIDs) > 0 {
-			c.randomDelay(1.0, 2.0)
-			return c.RunK12Flow(k12WorkspaceIDs, emailAddr, gmailIMAP)
+			if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
+				return nil, err
+			}
+			return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 		}
 		return nil, nil
 	} else if strings.Contains(finalPath, "error") || strings.Contains(finalURL, "error") {
@@ -383,28 +410,36 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 
 		if gmailIMAP != nil {
 			if needsManualOTPRequest {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
 				c.sendOTP()
 			}
-			
+
 			c.print("Waiting for OTP via IMAP. Reading Gmail inbox...")
-			otpCode, err = email.GetVerificationCodeViaIMAP(*gmailIMAP, emailAddr, 15, 4*time.Second)
-			
+			otpCode, err = email.GetVerificationCodeViaIMAP(ctx, *gmailIMAP, emailAddr, 15, 4*time.Second)
+
 			if err != nil {
 				return nil, fmt.Errorf("failed to auto-read OTP: %v", err)
 			}
 			c.print(fmt.Sprintf("Received OTP automatically: %s", otpCode))
 		} else {
 			if needsManualOTPRequest {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
 				c.sendOTP()
 			}
 			// Temp email mode: scrape OTP from generator.email
-			otpCode, err = email.GetVerificationCode(emailAddr, 20, 3*time.Second)
+			otpCode, err = email.GetVerificationCode(ctx, emailAddr, 20, 3*time.Second)
 		}
 		if err != nil {
 			return nil, err
 		}
 
-		c.randomDelay(0.3, 0.8)
+		if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+			return nil, err
+		}
 		status, data, err := c.validateOTP(otpCode)
 		if err != nil {
 			return nil, err
@@ -413,19 +448,31 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		if status != 200 {
 			c.print("Verification code failed, retrying...")
 			if gmailIMAP != nil {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
 				c.sendOTP()
-				c.randomDelay(1.0, 2.0)
+				if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
+					return nil, err
+				}
 				c.print("Waiting for OTP retry via IMAP...")
-				otpCode, err = email.GetVerificationCodeViaIMAP(*gmailIMAP, emailAddr, 15, 4*time.Second)
+				otpCode, err = email.GetVerificationCodeViaIMAP(ctx, *gmailIMAP, emailAddr, 15, 4*time.Second)
 			} else {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
 				c.sendOTP()
-				c.randomDelay(1.0, 2.0)
-				otpCode, err = email.GetVerificationCode(emailAddr, 10, 3*time.Second)
+				if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
+					return nil, err
+				}
+				otpCode, err = email.GetVerificationCode(ctx, emailAddr, 10, 3*time.Second)
 			}
 			if err != nil {
 				return nil, err
 			}
-			c.randomDelay(0.3, 0.8)
+			if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+				return nil, err
+			}
 			status, data, err = c.validateOTP(otpCode)
 			if err != nil {
 				return nil, err
@@ -434,7 +481,7 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 				return nil, fmt.Errorf("verification code failed after retry (%d): %v", status, data)
 			}
 		}
-		
+
 		c.print(fmt.Sprintf("Validate OTP Data: %v", data))
 
 		if u, ok := data["redirect_url"].(string); ok {
@@ -450,7 +497,9 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		cbURL = otpCbURL
 	} else {
 		// After OTP validation, proceed to createAccount
-		c.randomDelay(0.5, 1.5)
+		if err := c.randomDelay(ctx, 0.5, 1.5); err != nil {
+			return nil, err
+		}
 		status, accountData, err := c.createAccount(name, birthdate)
 		if err != nil {
 			return nil, err
@@ -480,20 +529,34 @@ func (c *Client) RunRegister(emailAddr, password, name, birthdate string, k12Wor
 		cbURL = "https://auth.openai.com" + cbURL
 	}
 
-	c.randomDelay(0.2, 0.5)
+	if err := c.randomDelay(ctx, 0.2, 0.5); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	c.callback(cbURL)
 
 	// K12 invite + token extraction after full registration
 	if len(k12WorkspaceIDs) > 0 {
-		c.randomDelay(1.0, 2.0)
-		return c.RunK12Flow(k12WorkspaceIDs, emailAddr, gmailIMAP)
+		if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
+			return nil, err
+		}
+		return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 	}
 
 	return nil, nil
 }
 
-func (c *Client) randomDelay(low, high float64) {
+func (c *Client) randomDelay(ctx context.Context, low, high float64) error {
 	delay := low + rand.Float64()*(high-low)
-	time.Sleep(time.Duration(delay * float64(time.Second)))
-}
+	timer := time.NewTimer(time.Duration(delay * float64(time.Second)))
+	defer timer.Stop()
 
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}

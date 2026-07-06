@@ -1,10 +1,11 @@
 package register
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	http "github.com/bogdanfinn/fhttp"
+	"io"
 	"net/url"
 	"strings"
 	"time"
@@ -14,31 +15,42 @@ import (
 )
 
 // RunLogin attempts to log in to an existing account and extract its access token.
-func (c *Client) RunLogin(emailAddr, password string, k12WorkspaceIDs []string, gmailIMAP *email.GmailIMAPConfig) (*TokenResult, error) {
+func (c *Client) RunLogin(ctx context.Context, emailAddr, password string, k12WorkspaceIDs []string, gmailIMAP *email.GmailIMAPConfig) (*TokenResult, error) {
 	c.print(fmt.Sprintf("Starting login flow for existing account: %s", emailAddr))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	if err := c.visitHomepage(); err != nil {
 		return nil, err
 	}
-	c.randomDelay(0.3, 0.8)
+	if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+		return nil, err
+	}
 
 	csrf, err := c.getCSRF()
 	if err != nil {
 		return nil, err
 	}
-	c.randomDelay(0.2, 0.5)
+	if err := c.randomDelay(ctx, 0.2, 0.5); err != nil {
+		return nil, err
+	}
 
 	authURL, err := c.signin(emailAddr, csrf, "login_or_signup")
 	if err != nil {
 		return nil, err
 	}
-	c.randomDelay(0.3, 0.8)
+	if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+		return nil, err
+	}
 
 	finalURL, err := c.authorize(authURL)
 	if err != nil {
 		return nil, err
 	}
-	c.randomDelay(0.3, 0.8)
+	if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+		return nil, err
+	}
 
 	u, _ := url.Parse(finalURL)
 	finalPath := u.Path
@@ -47,10 +59,10 @@ func (c *Client) RunLogin(emailAddr, password string, k12WorkspaceIDs []string, 
 	needOTP := false
 
 	c.print(fmt.Sprintf("Final Login URL: %s", finalURL))
-	
+
 	if strings.Contains(finalPath, "login/password") || strings.Contains(finalPath, "create-account/password") || strings.Contains(finalPath, "log-in/password") {
 		c.print("Entering password for login...")
-		
+
 		state := u.Query().Get("state")
 		c.print(fmt.Sprintf("Login State Parameter: %s", state))
 		status, data, err := c.loginPassword(emailAddr, password, state)
@@ -60,13 +72,13 @@ func (c *Client) RunLogin(emailAddr, password string, k12WorkspaceIDs []string, 
 		if status != 200 {
 			return nil, fmt.Errorf("password login failed (%d): %v", status, data)
 		}
-		
+
 		if u, ok := data["redirect_url"].(string); ok {
 			cbURL = u
 		} else if u, ok := data["continue_url"].(string); ok {
 			cbURL = u
 		}
-		
+
 		// Sometimes it might require OTP after password
 		if cbURL != "" && (strings.Contains(cbURL, "email-verification") || strings.Contains(cbURL, "email-otp")) {
 			c.print("Login requires 2FA / OTP verification.")
@@ -88,24 +100,32 @@ func (c *Client) RunLogin(emailAddr, password string, k12WorkspaceIDs []string, 
 		var err error
 
 		if gmailIMAP != nil {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			c.sendOTP()
-			
+
 			c.print("Waiting for Login OTP via IMAP. Reading Gmail inbox...")
-			otpCode, err = email.GetVerificationCodeViaIMAP(*gmailIMAP, emailAddr, 15, 4*time.Second)
-			
+			otpCode, err = email.GetVerificationCodeViaIMAP(ctx, *gmailIMAP, emailAddr, 15, 4*time.Second)
+
 			if err != nil {
 				return nil, fmt.Errorf("failed to auto-read OTP: %v", err)
 			}
 			c.print(fmt.Sprintf("Received OTP automatically: %s", otpCode))
 		} else {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			c.sendOTP()
-			otpCode, err = email.GetVerificationCode(emailAddr, 20, 3*time.Second)
+			otpCode, err = email.GetVerificationCode(ctx, emailAddr, 20, 3*time.Second)
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		c.randomDelay(0.3, 0.8)
+		if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+			return nil, err
+		}
 		status, data, err := c.validateOTP(otpCode)
 		if err != nil {
 			return nil, err
@@ -114,7 +134,7 @@ func (c *Client) RunLogin(emailAddr, password string, k12WorkspaceIDs []string, 
 		if status != 200 {
 			return nil, fmt.Errorf("login OTP verification failed (%d): %v", status, data)
 		}
-		
+
 		c.print(fmt.Sprintf("Validate OTP Data: %v", data))
 		if u, ok := data["redirect_url"].(string); ok {
 			cbURL = u
@@ -140,13 +160,20 @@ func (c *Client) RunLogin(emailAddr, password string, k12WorkspaceIDs []string, 
 		cbURL = "https://auth.openai.com" + cbURL
 	}
 
-	c.randomDelay(0.2, 0.5)
+	if err := c.randomDelay(ctx, 0.2, 0.5); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	c.callback(cbURL)
 
 	c.print("✅ Login completed! Extracting tokens...")
 	if len(k12WorkspaceIDs) > 0 {
-		c.randomDelay(1.0, 2.0)
-		return c.RunK12Flow(k12WorkspaceIDs, emailAddr, gmailIMAP)
+		if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
+			return nil, err
+		}
+		return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 	}
 	return nil, nil
 }
@@ -157,7 +184,7 @@ func (c *Client) loginPassword(email, password, state string) (int, map[string]i
 	if state != "" {
 		loginURL += "?state=" + state
 	}
-	
+
 	payload := map[string]string{
 		"username": email,
 		"password": password,

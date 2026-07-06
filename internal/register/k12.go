@@ -1,11 +1,11 @@
 package register
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	http "github.com/bogdanfinn/fhttp"
 	"github.com/verssache/chatgpt-creator/internal/email"
@@ -172,8 +172,11 @@ func (c *Client) getSessionWithAccount(accountID string) (*sessionResponse, erro
 }
 
 // RunK12Flow performs the K12 invite and token extraction after account creation.
-func (c *Client) RunK12Flow(workspaceIDs []string, emailAddr string, gmailIMAP *email.GmailIMAPConfig) (*TokenResult, error) {
+func (c *Client) RunK12Flow(ctx context.Context, workspaceIDs []string, emailAddr string, gmailIMAP *email.GmailIMAPConfig) (*TokenResult, error) {
 	c.print("Starting K12 invite flow...")
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	session, err := c.getSession()
 	if err != nil {
@@ -188,6 +191,9 @@ func (c *Client) RunK12Flow(workspaceIDs []string, emailAddr string, gmailIMAP *
 			continue
 		}
 
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		success, err := c.requestK12Invite(session.AccessToken, wsID)
 		if success {
 			c.print(fmt.Sprintf("✓ K12 invite request SUCCESS: %s", wsID))
@@ -198,7 +204,9 @@ func (c *Client) RunK12Flow(workspaceIDs []string, emailAddr string, gmailIMAP *
 		if err != nil {
 			c.print(fmt.Sprintf("✗ K12 invite failed [%s]: %v", wsID[:8], err))
 		}
-		c.randomDelay(0.3, 0.8)
+		if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
+			return nil, err
+		}
 	}
 
 	if !invited {
@@ -209,10 +217,17 @@ func (c *Client) RunK12Flow(workspaceIDs []string, emailAddr string, gmailIMAP *
 
 	if invited {
 		c.print("Switching to K12 workspace...")
-		time.Sleep(2 * time.Second)
+		if err := c.randomDelay(ctx, 2.0, 2.0); err != nil {
+			return nil, err
+		}
 
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		c.switchWorkspace(session.AccessToken, invitedWsID)
-		c.randomDelay(1.0, 2.0)
+		if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
+			return nil, err
+		}
 
 		newSession, err := c.getSessionWithAccount(invitedWsID)
 		if err == nil {
@@ -248,4 +263,3 @@ func (c *Client) RunK12Flow(workspaceIDs []string, emailAddr string, gmailIMAP *
 	c.print(fmt.Sprintf("✓ Tokens extracted for %s", session.User.Email))
 	return result, nil
 }
-

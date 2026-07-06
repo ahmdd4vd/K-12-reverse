@@ -14,6 +14,7 @@ import (
 	"github.com/verssache/chatgpt-creator/internal/register"
 	"github.com/verssache/chatgpt-creator/internal/ui"
 	"github.com/verssache/chatgpt-creator/internal/updater"
+	"github.com/verssache/chatgpt-creator/internal/util"
 )
 
 func main() {
@@ -63,17 +64,17 @@ func main() {
 			fmt.Printf("    Sisa target   : %d Akun\n", sess.Remaining)
 			fmt.Printf("    Worker dipakai: %d Worker\n\n", sess.MaxWorkers)
 			fmt.Printf(ui.C("Lanjutkan sesi ini? (Y/n): ", ui.Yellow))
-			
+
 			optInput, _ := reader.ReadString('\n')
 			optInput = strings.TrimSpace(strings.ToLower(optInput))
-			
+
 			if optInput == "" || optInput == "y" {
 				// We need to initialize gmailPool and other required things
 				var k12WorkspaceIDs []string
 				if cfg.EnableK12Invite {
 					k12WorkspaceIDs = cfg.K12WorkspaceIDs
 				}
-				
+
 				var gmailPool *email.GmailDotPool
 				if cfg.GmailMode && len(cfg.GmailAccounts) > 0 {
 					var listFiles []string
@@ -86,7 +87,7 @@ func main() {
 						fmt.Printf(ui.C("⚠ Gagal memuat Gmail Pool: %v\n", ui.Red), err)
 					}
 				}
-				
+
 				batchCfg := &register.BatchConfig{
 					TotalAccounts:   int(sess.Remaining),
 					OutputFile:      cfg.OutputFile,
@@ -99,12 +100,12 @@ func main() {
 					GmailPool:       gmailPool,
 					GmailAccounts:   cfg.GmailAccounts,
 				}
-				
+
 				os.Remove(sessionFile) // clear session to avoid infinite loop on crash
-				
+
 				fmt.Printf(ui.C("\n🚀 Melanjutkan sisa %d akun dengan %d worker...\n", ui.Green), sess.Remaining, sess.MaxWorkers)
 				register.RunBatch(batchCfg)
-				
+
 				fmt.Println()
 				fmt.Printf(ui.C("Tekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
 				reader.ReadString('\n')
@@ -174,7 +175,7 @@ func countJSONTokens(filepath string) int {
 
 func printMainMenu(cfg *config.Config) {
 	fmt.Println(ui.C("\n📊 [ GMAIL ACCOUNTS STATUS ]", ui.Cyan))
-	
+
 	if cfg.GmailMode {
 		if len(cfg.GmailAccounts) == 0 {
 			fmt.Println(ui.C("  (No Gmail accounts configured)", ui.Red))
@@ -183,7 +184,7 @@ func printMainMenu(cfg *config.Config) {
 				username := strings.Split(acc.BaseEmail, "@")[0]
 				listFile := filepath.Join("data", fmt.Sprintf("list_%s.txt", username))
 				tokenFile := filepath.Join("data", fmt.Sprintf("accounts_%s.json", username))
-				
+
 				listCount := countLines(listFile)
 				tokenCount := countJSONTokens(tokenFile)
 
@@ -206,7 +207,7 @@ func printMainMenu(cfg *config.Config) {
 	} else {
 		fmt.Printf(" - K12 Invite : ❌ %s\n", ui.C("DISABLED", ui.Red))
 	}
-	
+
 	proxyStr := "❌ (none)"
 	if cfg.Proxy != "" {
 		proxyStr = "✅ " + cfg.Proxy
@@ -230,7 +231,7 @@ func printHelpGuide(reader *bufio.Reader) {
 	fmt.Println(ui.C("\n╔══════════════════════════════════════════════════╗", ui.Cyan))
 	fmt.Println(ui.C("║            📚 PANDUAN PENGGUNAAN BOT             ║", ui.Cyan))
 	fmt.Println(ui.C("╚══════════════════════════════════════════════════╝", ui.Cyan))
-	
+
 	fmt.Println(ui.C("\n1. Cara Kerja Dot-Trick (Titik Ajaib)", ui.Yellow))
 	fmt.Println("   Bot akan otomatis menambahkan titik di antara huruf username Gmail Anda.")
 	fmt.Println("   ChatGPT menganggap itu email yang berbeda, tapi Google tetap mengirim")
@@ -258,7 +259,7 @@ func printHelpGuide(reader *bufio.Reader) {
 
 func exportTokensTXT(reader *bufio.Reader) {
 	fmt.Println(ui.C("\n=== Export Tokens ===", ui.Cyan))
-	
+
 	files, err := filepath.Glob(filepath.Join("data", "accounts_*.json"))
 	if err != nil || len(files) == 0 {
 		fmt.Println(ui.C("⚠ Tidak ada file token JSON yang ditemukan di folder data/", ui.Red))
@@ -327,7 +328,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 			fmt.Printf("Pilih opsi: ")
 			opt, _ := reader.ReadString('\n')
 			opt = strings.TrimSpace(strings.ToUpper(opt))
-			
+
 			if opt == "D" || opt == "" {
 				break
 			} else if opt == "A" {
@@ -357,7 +358,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 				}
 
 				listFile := filepath.Join("data", fmt.Sprintf("list_%s.txt", normUsername))
-				
+
 				cfg.GmailAccounts = append(cfg.GmailAccounts, config.GmailAccount{
 					BaseEmail:   normBase,
 					AppPassword: appPwInput,
@@ -371,7 +372,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 				} else {
 					fmt.Printf(ui.C("✅ Added %s! Saved %d variations to %s\n", ui.Green), normBase, total, listFile)
 				}
-				
+
 			} else if opt == "R" {
 				fmt.Printf(ui.C("Masukkan nomor urut akun yang mau dihapus: ", ui.Yellow))
 				numStr, _ := reader.ReadString('\n')
@@ -424,11 +425,28 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 
 	// 3. Misc Setup
 	fmt.Println(ui.C("\n--- Misc Setup ---", ui.Yellow))
-	fmt.Printf(ui.C(fmt.Sprintf("Proxy (enter to skip) [current: %s]: ", cfg.Proxy), ui.Yellow))
-	proxyInput, _ := reader.ReadString('\n')
-	proxyInput = strings.TrimSpace(proxyInput)
-	if proxyInput != "" {
+	for {
+		fmt.Printf(ui.C(fmt.Sprintf("Proxy (enter to skip) [current: %s]: ", cfg.Proxy), ui.Yellow))
+		proxyInput, _ := reader.ReadString('\n')
+		proxyInput = strings.TrimSpace(proxyInput)
+		if proxyInput == "" {
+			break
+		}
+
+		fmt.Println(ui.C("🔍 Checking proxy access to ChatGPT...", ui.Cyan))
+		status, err := util.CheckProxyAccess(proxyInput)
+		if err != nil {
+			if status == 403 {
+				fmt.Println(ui.C("❌ Proxy rejected: ChatGPT/OpenAI blocked this proxy (HTTP 403)", ui.Red))
+				continue
+			}
+			fmt.Printf(ui.C("❌ Proxy rejected: %v\n", ui.Red), err)
+			continue
+		}
+
 		cfg.Proxy = proxyInput
+		fmt.Printf(ui.C("✅ Proxy OK (HTTP %d)\n", ui.Green), status)
+		break
 	}
 
 	pwDefault := "(random)"
@@ -450,7 +468,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 
 func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 	fmt.Println(ui.C("\n=== Start Registration ===", ui.Cyan))
-	
+
 	fmt.Printf(ui.C("Total accounts to register: ", ui.Yellow))
 	totalInput, _ := reader.ReadString('\n')
 	totalInput = strings.TrimSpace(totalInput)
@@ -485,7 +503,7 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 			fmt.Println(ui.C("⚠ No Gmail accounts configured! Please edit configuration first.", ui.Red))
 			return
 		}
-		
+
 		var listFiles []string
 		for _, acc := range cfg.GmailAccounts {
 			listFiles = append(listFiles, acc.ListFile)
@@ -526,6 +544,22 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 	if confirmInput != "" && confirmInput != "y" {
 		fmt.Println(ui.C("❌ Dibatalkan.", ui.Red))
 		return
+	}
+
+	if strings.TrimSpace(cfg.Proxy) != "" {
+		fmt.Println(ui.C("🔍 Checking proxy access to ChatGPT...", ui.Cyan))
+		status, err := util.CheckProxyAccess(cfg.Proxy)
+		if err != nil {
+			if status == 403 {
+				fmt.Println(ui.C("❌ Proxy rejected: ChatGPT/OpenAI blocked this proxy (HTTP 403)", ui.Red))
+				fmt.Println(ui.C("Registration tidak dimulai. Perbaiki proxy di menu [2].", ui.Yellow))
+				return
+			}
+			fmt.Printf(ui.C("❌ Proxy rejected: %v\n", ui.Red), err)
+			fmt.Println(ui.C("Registration tidak dimulai. Perbaiki proxy di menu [2].", ui.Yellow))
+			return
+		}
+		fmt.Printf(ui.C("✅ Proxy OK (HTTP %d)\n", ui.Green), status)
 	}
 
 	// Build batch config

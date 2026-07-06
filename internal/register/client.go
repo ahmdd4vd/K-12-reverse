@@ -42,6 +42,7 @@ func NewClient(proxy, tag string, workerID int, printMu, fileMu *sync.Mutex) (*C
 	options := []tls_client.HttpClientOption{
 		tls_client.WithClientProfile(mappedProfile),
 		tls_client.WithCookieJar(tls_client.NewCookieJar()),
+		tls_client.WithTimeoutSeconds(60),
 	}
 
 	if proxy != "" {

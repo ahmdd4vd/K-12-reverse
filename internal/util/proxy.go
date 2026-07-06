@@ -1,9 +1,16 @@
 package util
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
+
+	http "github.com/bogdanfinn/fhttp"
+	tls_client "github.com/bogdanfinn/tls-client"
+
+	"github.com/verssache/chatgpt-creator/internal/chrome"
 )
 
 // FormatProxy parses various proxy string formats and normalizes them into protocol://username:password@host:port
@@ -110,4 +117,100 @@ func FormatProxy(rawProxy string) string {
 	}
 
 	return fmt.Sprintf("%s://%s", protocol, rawProxy)
+}
+
+func CheckProxyAccess(proxy string) (int, error) {
+	proxy = strings.TrimSpace(proxy)
+	if proxy == "" {
+		return 0, nil
+	}
+
+	formattedProxy := FormatProxy(proxy)
+	profile, _, ua := chrome.RandomChromeVersion()
+	mappedProfile := chrome.MapToTLSProfile(profile.Impersonate)
+
+	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(),
+		tls_client.WithClientProfile(mappedProfile),
+		tls_client.WithCookieJar(tls_client.NewCookieJar()),
+		tls_client.WithTimeoutSeconds(15),
+		tls_client.WithProxyUrl(formattedProxy),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create proxy client: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "https://chatgpt.com/", nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create proxy check request: %w", err)
+	}
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("sec-ch-ua", profile.SecChUA)
+	req.Header.Set("sec-ch-ua-mobile", "?0")
+	req.Header.Set("sec-ch-ua-platform", `"Windows"`)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("proxy request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if err := proxyStatusError(resp.StatusCode); err != nil {
+		return resp.StatusCode, err
+	}
+
+	req, err = http.NewRequest(http.MethodGet, "https://chatgpt.com/api/auth/csrf", nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create proxy CSRF check request: %w", err)
+	}
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Referer", "https://chatgpt.com/")
+	req.Header.Set("sec-ch-ua", profile.SecChUA)
+	req.Header.Set("sec-ch-ua-mobile", "?0")
+	req.Header.Set("sec-ch-ua-platform", `"Windows"`)
+
+	resp, err = client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("proxy CSRF request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, fmt.Errorf("failed to read CSRF response body: %w", err)
+	}
+
+	if err := proxyStatusError(resp.StatusCode); err != nil {
+		return resp.StatusCode, err
+	}
+	if err := proxyCSRFBodyError(body); err != nil {
+		return resp.StatusCode, err
+	}
+	return resp.StatusCode, nil
+}
+
+func proxyStatusError(status int) error {
+	if status >= 200 && status < 400 {
+		return nil
+	}
+	if status == http.StatusForbidden {
+		return fmt.Errorf("ChatGPT/OpenAI returned 403")
+	}
+	return fmt.Errorf("unexpected HTTP status %d", status)
+}
+
+func proxyCSRFBodyError(body []byte) error {
+	var data struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return fmt.Errorf("CSRF endpoint returned non-JSON/invalid body: %w", err)
+	}
+	if strings.TrimSpace(data.CSRFToken) == "" {
+		return fmt.Errorf("CSRF endpoint returned JSON without csrfToken")
+	}
+	return nil
 }
