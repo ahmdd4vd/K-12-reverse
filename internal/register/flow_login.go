@@ -98,20 +98,16 @@ func (c *Client) RunLogin(ctx context.Context, emailAddr, password string, k12Wo
 	if needOTP {
 		var otpCode string
 		var err error
-		if gmailIMAP != nil {
-			email.IMAPMutex.Lock()
-			// Fetch the latest UID baseline before we trigger the OTP dispatch
-			startUID, _ := email.GetLatestUID(*gmailIMAP)
 
+		if gmailIMAP != nil {
 			if err := ctx.Err(); err != nil {
-				email.IMAPMutex.Unlock()
 				return nil, err
 			}
 			c.sendOTP()
 
-			c.print(fmt.Sprintf("Waiting for Login OTP via IMAP (start UID: %d). Reading Gmail inbox...", startUID))
-			otpCode, err = email.GetVerificationCodeViaIMAP(ctx, *gmailIMAP, emailAddr, startUID, 20, 5*time.Second)
-			email.IMAPMutex.Unlock()
+			c.print("Waiting for Login OTP via IMAP. Reading Gmail inbox...")
+			otpCode, err = email.GetVerificationCodeViaIMAP(ctx, *gmailIMAP, emailAddr, 15, 4*time.Second)
+
 			if err != nil {
 				return nil, fmt.Errorf("failed to auto-read OTP: %v", err)
 			}

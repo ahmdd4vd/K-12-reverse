@@ -345,10 +345,10 @@ func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, bir
 		// c.sendOTP() is handled in the block below instead
 		needOTP = true
 		needsManualOTPRequest = true
-	} else if strings.Contains(finalPath, "email-verification") || strings.Contains(finalPath, "email-otp") ||
-		strings.Contains(finalPath, "login/password") || strings.Contains(finalPath, "log-in/password") {
-		c.print("Zombie detected: redirect directly to existing account flow")
-		return nil, fmt.Errorf("zombie_detected: email already exists or partially registered in OpenAI")
+	} else if strings.Contains(finalPath, "email-verification") || strings.Contains(finalPath, "email-otp") {
+		c.print("Jump to OTP verification stage")
+		// c.sendOTP() // OpenAI already sends the OTP automatically when jumping here
+		needOTP = true
 	} else if strings.Contains(finalPath, "about-you") {
 		c.print("Jump to fill information stage")
 		if err := c.randomDelay(ctx, 0.5, 1.0); err != nil {
@@ -384,34 +384,7 @@ func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, bir
 			}
 			return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 		}
-
-		// Extract tokens
-		c.print("Extracting session tokens...")
-		session, err := c.getSession()
-		if err != nil {
-			c.print(fmt.Sprintf("⚠ Warning: Failed to extract final session token: %v", err))
-			return nil, nil
-		}
-		
-		// Build token result
-		refreshToken := session.RefreshToken
-		if refreshToken == "" {
-			refreshToken = "not available"
-		}
-		idToken := session.IdToken
-		if idToken == "" {
-			idToken = session.AccessToken
-		}
-		
-		result := &TokenResult{
-			AccessToken:  session.AccessToken,
-			RefreshToken: refreshToken,
-			IdToken:      idToken,
-			Email:        session.User.Email,
-		}
-		
-		c.print(fmt.Sprintf("✓ Tokens extracted for %s", session.User.Email))
-		return result, nil
+		return nil, nil
 	} else if strings.Contains(finalPath, "callback") || strings.Contains(finalURL, "chatgpt.com") {
 		c.print("Account registration completed")
 
@@ -422,34 +395,7 @@ func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, bir
 			}
 			return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 		}
-
-		// Extract tokens
-		c.print("Extracting session tokens...")
-		session, err := c.getSession()
-		if err != nil {
-			c.print(fmt.Sprintf("⚠ Warning: Failed to extract final session token: %v", err))
-			return nil, nil
-		}
-		
-		// Build token result
-		refreshToken := session.RefreshToken
-		if refreshToken == "" {
-			refreshToken = "not available"
-		}
-		idToken := session.IdToken
-		if idToken == "" {
-			idToken = session.AccessToken
-		}
-		
-		result := &TokenResult{
-			AccessToken:  session.AccessToken,
-			RefreshToken: refreshToken,
-			IdToken:      idToken,
-			Email:        session.User.Email,
-		}
-		
-		c.print(fmt.Sprintf("✓ Tokens extracted for %s", session.User.Email))
-		return result, nil
+		return nil, nil
 	} else if strings.Contains(finalPath, "error") || strings.Contains(finalURL, "error") {
 		c.print(fmt.Sprintf("Auth Error jump: %s", finalURL))
 		return nil, fmt.Errorf("auth rate limit or error encountered: please change IP/Proxy or try again later")
@@ -463,21 +409,16 @@ func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, bir
 		var err error
 
 		if gmailIMAP != nil {
-			email.IMAPMutex.Lock()
-			// Fetch the latest UID baseline before we trigger the OTP dispatch
-			startUID, _ := email.GetLatestUID(*gmailIMAP)
-
 			if needsManualOTPRequest {
 				if err := ctx.Err(); err != nil {
-					email.IMAPMutex.Unlock()
 					return nil, err
 				}
 				c.sendOTP()
 			}
 
-			c.print(fmt.Sprintf("Waiting for OTP via IMAP (start UID: %d). Reading Gmail inbox...", startUID))
-			otpCode, err = email.GetVerificationCodeViaIMAP(ctx, *gmailIMAP, emailAddr, startUID, 20, 5*time.Second)
-			email.IMAPMutex.Unlock()
+			c.print("Waiting for OTP via IMAP. Reading Gmail inbox...")
+			otpCode, err = email.GetVerificationCodeViaIMAP(ctx, *gmailIMAP, emailAddr, 15, 4*time.Second)
+
 			if err != nil {
 				return nil, fmt.Errorf("failed to auto-read OTP: %v", err)
 			}
@@ -507,16 +448,15 @@ func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, bir
 		if status != 200 {
 			c.print("Verification code failed, retrying...")
 			if gmailIMAP != nil {
-				email.IMAPMutex.Lock()
-				startUID, _ := email.GetLatestUID(*gmailIMAP)
-				c.sendOTP()
-				if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
-					email.IMAPMutex.Unlock()
+				if err := ctx.Err(); err != nil {
 					return nil, err
 				}
-				c.print(fmt.Sprintf("Waiting for OTP retry via IMAP (start UID: %d)...", startUID))
-				otpCode, err = email.GetVerificationCodeViaIMAP(ctx, *gmailIMAP, emailAddr, startUID, 20, 5*time.Second)
-				email.IMAPMutex.Unlock()
+				c.sendOTP()
+				if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
+					return nil, err
+				}
+				c.print("Waiting for OTP retry via IMAP...")
+				otpCode, err = email.GetVerificationCodeViaIMAP(ctx, *gmailIMAP, emailAddr, 15, 4*time.Second)
 			} else {
 				if err := ctx.Err(); err != nil {
 					return nil, err
@@ -605,33 +545,7 @@ func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, bir
 		return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 	}
 
-	// Extract and return base token even if K12 invite is not requested/configured
-	c.print("Extracting session tokens...")
-	session, err := c.getSession()
-	if err != nil {
-		c.print(fmt.Sprintf("⚠ Warning: Failed to extract final session token: %v", err))
-		return nil, nil
-	}
-
-	refreshToken := session.RefreshToken
-	if refreshToken == "" {
-		refreshToken = "not available"
-	}
-
-	idToken := session.IdToken
-	if idToken == "" {
-		idToken = session.AccessToken
-	}
-
-	result := &TokenResult{
-		AccessToken:  session.AccessToken,
-		RefreshToken: refreshToken,
-		IdToken:      idToken,
-		Email:        session.User.Email,
-	}
-
-	c.print(fmt.Sprintf("✓ Tokens extracted for %s", session.User.Email))
-	return result, nil
+	return nil, nil
 }
 
 func (c *Client) randomDelay(ctx context.Context, low, high float64) error {
