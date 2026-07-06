@@ -9,11 +9,5 @@
   ],
   "enable_k12_invite": true,
   "gmail_mode": true,
-  "gmail_accounts": [
-    {
-      "base_email": "bakartempik73@gmail.com",
-      "app_password": "fzri ktnk imer cswd",
-      "list_file": "data\\list_bakartempik73.txt"
-    }
-  ]
+  "gmail_accounts": []
 }

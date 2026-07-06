@@ -8,7 +8,6 @@ k12-creator.exe
 .DS_Store
 
 # Local config and runtime outputs
-config.json
 results.txt
 export_tokens.txt
 accounts.json
