@@ -16,6 +16,15 @@ K12-Reverse adalah *command-line interface* (CLI) berskala produksi yang diranca
 
 Sistem ini didesain dengan arsitektur konkurensi tingkat tinggi (lock-free) yang memungkinkan pemrosesan puluhan akun secara paralel pada *thread* yang berbeda, memastikan kecepatan dan efisiensi maksimal.
 
+## 💡 Mengapa Menggunakan K12-Reverse? (Nilai & Manfaat)
+
+Sebagian besar *developer* dan *engineer* menghadapi batasan ketat (*rate limits*) saat menggunakan layanan AI seperti Codex atau ChatGPT untuk penulisan kode skala besar. K12-Reverse hadir untuk memecahkan masalah tersebut dengan memberikan suplai akun tak terbatas secara otomatis.
+
+Keuntungan utama menggunakan sistem ini:
+1. **Otomatisasi Massal (Zero-Touch)**: Memproduksi ratusan hingga ribuan akun ChatGPT terverifikasi hanya dengan sekali jalan (memanfaatkan satu Gmail utama).
+2. **K12 Workspace Injection (Setara Plus/Pro)**: Mengikat akun yang baru dibuat ke dalam *Workspace* Edukasi (K12). Akun K12 memiliki kuota pemrosesan, *limit* permintaan, dan prioritas *server* yang setara dengan **ChatGPT Plus / Business / Pro** bergantung pada spesifikasi *Workspace* Anda.
+3. **Rotasi Akun Tanpa Batas Limit**: Dengan suplai akun K12 yang masif dan integrasi langsung ke ekosistem Codex maupun 9Router, Anda dapat melakukan rotasi kredensial. **Hasilnya: Anda bisa menggunakan Codex secara intensif seharian penuh tanpa pernah khawatir kehabisan kuota atau terblokir *limit*.**
+
 ## 📸 Preview
 ![CLI Preview](assets/preview.png)
 
