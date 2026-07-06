@@ -4,14 +4,16 @@
   "token_output_file": "accounts.json",
   "default_password": "",
   "default_domain": "",
-  "k12_workspace_ids": [],
+  "k12_workspace_ids": [
+    "ff598c4d-ccaf-40c1-bfaa-cb94565764b1"
+  ],
   "enable_k12_invite": true,
   "gmail_mode": true,
   "gmail_accounts": [
     {
-      "base_email": "example@gmail.com",
-      "app_password": "xxxx xxxx xxxx xxxx",
-      "list_file": "data\\list_example.txt"
+      "base_email": "bakartempik73@gmail.com",
+      "app_password": "fzri ktnk imer cswd",
+      "list_file": "data\\list_bakartempik73.txt"
     }
   ]
 }

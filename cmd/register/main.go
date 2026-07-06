@@ -32,7 +32,7 @@ func main() {
 	// Load config
 	cfg, err := config.Load("config.json")
 	if err != nil {
-		fmt.Printf(ui.C("Error loading config: %v\n", ui.Red), err)
+		fmt.Printf("%s\n", ui.C(fmt.Sprintf("Error loading config: %v", err), ui.Red))
 		os.Exit(1)
 	}
 
@@ -59,11 +59,11 @@ func main() {
 		if json.Unmarshal(sessionData, &sess) == nil && sess.Remaining > 0 {
 			ui.ClearScreen()
 			ui.PrintBanner()
-			fmt.Printf(ui.C("\n[!] Ditemukan sesi pendaftaran yang terputus!\n", ui.Yellow))
+			fmt.Printf("%s\n", ui.C("\n[!] Ditemukan sesi pendaftaran yang terputus!", ui.Yellow))
 			fmt.Printf("    Target awal   : %d Akun\n", sess.TotalAccounts)
 			fmt.Printf("    Sisa target   : %d Akun\n", sess.Remaining)
 			fmt.Printf("    Worker dipakai: %d Worker\n\n", sess.MaxWorkers)
-			fmt.Printf(ui.C("Lanjutkan sesi ini? (Y/n): ", ui.Yellow))
+			fmt.Print(ui.C("Lanjutkan sesi ini? (Y/n): ", ui.Yellow))
 			optInput, err := reader.ReadString('\n')
 			if err != nil {
 				fmt.Println("\nInput stream closed. Exiting...")
@@ -87,7 +87,7 @@ func main() {
 					var err error
 					gmailPool, err = email.NewMultiGmailPool(listFiles)
 					if err != nil {
-						fmt.Printf(ui.C("⚠ Gagal memuat Gmail Pool: %v\n", ui.Red), err)
+						fmt.Printf("%s\n", ui.C(fmt.Sprintf("⚠ Gagal memuat Gmail Pool: %v", err), ui.Red))
 					}
 				}
 
@@ -106,11 +106,11 @@ func main() {
 
 				os.Remove(sessionFile) // clear session to avoid infinite loop on crash
 
-				fmt.Printf(ui.C("\n🚀 Melanjutkan sisa %d akun dengan %d worker...\n", ui.Green), sess.Remaining, sess.MaxWorkers)
+				fmt.Printf("%s\n", ui.C(fmt.Sprintf("\n🚀 Melanjutkan sisa %d akun dengan %d worker...", sess.Remaining, sess.MaxWorkers), ui.Green))
 				register.RunBatch(batchCfg)
 
 				fmt.Println()
-				fmt.Printf(ui.C("Tekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
+				fmt.Print(ui.C("Tekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
 				reader.ReadString('\n')
 			} else {
 				os.Remove(sessionFile)
@@ -144,7 +144,7 @@ func main() {
 			exportTokensTXT(reader)
 		case "5":
 			register.ImportTo9Router()
-			fmt.Printf(ui.C("\nTekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
+			fmt.Print(ui.C("\nTekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
 			reader.ReadString('\n')
 		case "0":
 			fmt.Println(ui.C("Goodbye! 👋", ui.Cyan))
@@ -265,7 +265,7 @@ func printHelpGuide(reader *bufio.Reader) {
 	fmt.Println("   16 digit 'App Password' dari Pengaturan Keamanan Akun Google Anda.")
 
 	fmt.Println(ui.C("\n────────────────────────────────────────────────────", ui.Cyan))
-	fmt.Printf(ui.C("Tekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
+	fmt.Print(ui.C("Tekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
 	reader.ReadString('\n')
 }
 
@@ -304,12 +304,12 @@ func exportTokensTXT(reader *bufio.Reader) {
 	}
 
 	if totalExported > 0 {
-		fmt.Printf(ui.C("✅ Berhasil mengekspor %d token ke file 'export_tokens.txt'!\n", ui.Green), totalExported)
+		fmt.Printf("%s\n", ui.C(fmt.Sprintf("✅ Berhasil mengekspor %d token ke file 'export_tokens.txt'!", totalExported), ui.Green))
 	} else {
 		fmt.Println(ui.C("⚠ Tidak ada token yang bisa diekspor.", ui.Yellow))
 	}
 
-	fmt.Printf(ui.C("Tekan Enter untuk kembali...", ui.Yellow))
+	fmt.Print(ui.C("Tekan Enter untuk kembali...", ui.Yellow))
 	reader.ReadString('\n')
 }
 
@@ -345,7 +345,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 				break
 			} else if opt == "A" {
 				fmt.Println(ui.C("\n--- Add New Gmail ---", ui.Cyan))
-				fmt.Printf(ui.C("Base Gmail Address (e.g. john@gmail.com): ", ui.Yellow))
+				fmt.Print(ui.C("Base Gmail Address (e.g. john@gmail.com): ", ui.Yellow))
 				baseInput, _ := reader.ReadString('\n')
 				baseInput = strings.TrimSpace(baseInput)
 				if baseInput == "" {
@@ -361,7 +361,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 				normUsername := strings.ReplaceAll(parts[0], ".", "")
 				normBase := normUsername + "@gmail.com"
 
-				fmt.Printf(ui.C("Gmail App Password (16-chars): ", ui.Yellow))
+				fmt.Print(ui.C("Gmail App Password (16-chars): ", ui.Yellow))
 				appPwInput, _ := reader.ReadString('\n')
 				appPwInput = strings.TrimSpace(appPwInput)
 				if appPwInput == "" {
@@ -380,13 +380,13 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 				fmt.Printf("Generating dot-trick for %s...\n", normBase)
 				total, err := email.GenerateDotTrick(normBase, listFile)
 				if err != nil {
-					fmt.Printf(ui.C("⚠ Error generating list: %v\n", ui.Red), err)
+					fmt.Printf("%s\n", ui.C(fmt.Sprintf("⚠ Error generating list: %v", err), ui.Red))
 				} else {
-					fmt.Printf(ui.C("✅ Added %s! Saved %d variations to %s\n", ui.Green), normBase, total, listFile)
+					fmt.Printf("%s\n", ui.C(fmt.Sprintf("✅ Added %s! Saved %d variations to %s", normBase, total, listFile), ui.Green))
 				}
 
 			} else if opt == "R" {
-				fmt.Printf(ui.C("Masukkan nomor urut akun yang mau dihapus: ", ui.Yellow))
+				fmt.Print(ui.C("Masukkan nomor urut akun yang mau dihapus: ", ui.Yellow))
 				numStr, _ := reader.ReadString('\n')
 				numStr = strings.TrimSpace(numStr)
 				num, err := strconv.Atoi(numStr)
@@ -399,7 +399,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 			}
 		}
 	} else {
-		fmt.Printf(ui.C("Default domain (current: (random), press Enter to use, or enter new): ", ui.Yellow))
+		fmt.Print(ui.C("Default domain (current: (random), press Enter to use, or enter new): ", ui.Yellow))
 		domainInput, _ := reader.ReadString('\n')
 		domainInput = strings.TrimSpace(domainInput)
 		if domainInput != "" {
@@ -413,7 +413,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 	if cfg.EnableK12Invite {
 		k12ModeDefault = "Y"
 	}
-	fmt.Printf(ui.C(fmt.Sprintf("Enable K12 Workspace Invite? (Y/n) [current: %s]: ", k12ModeDefault), ui.Yellow))
+	fmt.Print(ui.C(fmt.Sprintf("Enable K12 Workspace Invite? (Y/n) [current: %s]: ", k12ModeDefault), ui.Yellow))
 	k12ModeInput, _ := reader.ReadString('\n')
 	k12ModeInput = strings.TrimSpace(strings.ToLower(k12ModeInput))
 	if k12ModeInput == "y" || (k12ModeInput == "" && cfg.EnableK12Invite) {
@@ -427,7 +427,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 		if len(cfg.K12WorkspaceIDs) > 0 {
 			currentK12 = cfg.K12WorkspaceIDs[0]
 		}
-		fmt.Printf(ui.C(fmt.Sprintf("K12 Workspace ID (Tekan Enter buat biarin [%s], atau ketik ID baru): ", currentK12), ui.Yellow))
+		fmt.Print(ui.C(fmt.Sprintf("K12 Workspace ID (Tekan Enter buat biarin [%s], atau ketik ID baru): ", currentK12), ui.Yellow))
 		k12Input, _ := reader.ReadString('\n')
 		k12Input = strings.TrimSpace(k12Input)
 		if k12Input != "" {
@@ -438,7 +438,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 	// 3. Misc Setup
 	fmt.Println(ui.C("\n--- Misc Setup ---", ui.Yellow))
 	for {
-		fmt.Printf(ui.C(fmt.Sprintf("Proxy (enter to skip) [current: %s]: ", cfg.Proxy), ui.Yellow))
+		fmt.Print(ui.C(fmt.Sprintf("Proxy (enter to skip) [current: %s]: ", cfg.Proxy), ui.Yellow))
 		proxyInput, _ := reader.ReadString('\n')
 		proxyInput = strings.TrimSpace(proxyInput)
 		if proxyInput == "" {
@@ -465,7 +465,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 	if cfg.DefaultPassword != "" {
 		pwDefault = cfg.DefaultPassword
 	}
-	fmt.Printf(ui.C(fmt.Sprintf("Default password [current: %s]: ", pwDefault), ui.Yellow))
+	fmt.Print(ui.C(fmt.Sprintf("Default password [current: %s]: ", pwDefault), ui.Yellow))
 	pwInput, _ := reader.ReadString('\n')
 	pwInput = strings.TrimSpace(pwInput)
 	if pwInput != "" {
@@ -481,7 +481,7 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 	fmt.Println(ui.C("\n=== Start Registration ===", ui.Cyan))
 
-	fmt.Printf(ui.C("Total accounts to register: ", ui.Yellow))
+	fmt.Print(ui.C("Total accounts to register: ", ui.Yellow))
 	totalInput, err := reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("\nInput stream closed. Exiting...")
@@ -500,7 +500,7 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 	}
 
 	defaultWorkers := 3
-	fmt.Printf(ui.C(fmt.Sprintf("Max concurrent workers (default: %d): ", defaultWorkers), ui.Yellow))
+	fmt.Print(ui.C(fmt.Sprintf("Max concurrent workers (default: %d): ", defaultWorkers), ui.Yellow))
 	workersInput, err := reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("\nInput stream closed. Exiting...")
@@ -554,11 +554,11 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 
 	fmt.Println()
 	fmt.Println(ui.C("────────────────────────────────────────────────────", ui.Cyan))
-	fmt.Printf(ui.C("🚀 Starting run with %d accounts / %d workers...\n", ui.Green), totalAccounts, maxWorkers)
+	fmt.Printf("%s\n", ui.C(fmt.Sprintf("🚀 Starting run with %d accounts / %d workers...", totalAccounts, maxWorkers), ui.Green))
 	fmt.Println(ui.C("────────────────────────────────────────────────────", ui.Cyan))
 	fmt.Println()
 
-	fmt.Printf(ui.C("[?] Lanjut jalankan? (Y/n): ", ui.Yellow))
+	fmt.Print(ui.C("[?] Lanjut jalankan? (Y/n): ", ui.Yellow))
 	confirmInput, err := reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("\nInput stream closed. Exiting...")
@@ -604,6 +604,6 @@ func startRegistration(cfg *config.Config, reader *bufio.Reader) {
 	register.RunBatch(batchCfg)
 
 	fmt.Println()
-	fmt.Printf(ui.C("Tekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
+	fmt.Print(ui.C("Tekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
 	reader.ReadString('\n')
 }
