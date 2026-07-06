@@ -14,8 +14,8 @@ import (
 	"github.com/verssache/chatgpt-creator/internal/util"
 )
 
-// RunLogin attempts to log in to an existing account and extract its access token.
-func (c *Client) RunLogin(ctx context.Context, emailAddr, password string, k12WorkspaceIDs []string, gmailIMAP *email.GmailIMAPConfig) (*TokenResult, error) {
+// RunLogin performs the login flow to rescue zombie accounts.
+func (c *Client) RunLogin(ctx context.Context, emailAddr, password string, k12WorkspaceIDs []string, gmailIMAP *email.GmailIMAPConfig) ([]*TokenResult, error) {
 	c.print(fmt.Sprintf("Starting login flow for existing account: %s", emailAddr))
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -169,12 +169,12 @@ func (c *Client) RunLogin(ctx context.Context, emailAddr, password string, k12Wo
 	c.callback(cbURL)
 
 	c.print("✅ Login completed! Extracting tokens...")
+	// Final Step: Execute K12 invite and fetch session
 	if len(k12WorkspaceIDs) > 0 {
-		if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
-			return nil, err
-		}
 		return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 	}
+
+	c.print("No K12 workspace IDs provided, skipping K12 flow")
 	return nil, nil
 }
 

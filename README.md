@@ -72,7 +72,17 @@ Demi keamanan, Anda tidak bisa menggunakan kata sandi asli Gmail. Anda harus mem
 
 ---
 
-## 🔥 Apa yang baru di v1.2?
+## 🔥 Apa yang baru di v1.3? (Major Update)
+
+Versi 1.3 membawa integrasi penuh ke dalam ekosistem *tools* eksternal dan kemampuan registrasi ganda:
+
+- **Codex Verification Bypass (Auto-Injector)**: Lupakan ekstensi browser atau memindah-mindahkan token secara manual. Bot ini kini bisa mengekstrak token ChatGPT dari database lokal, mengubahnya menjadi *Synthetic JWT Token*, dan **menyuntikkannya secara otomatis** ke dalam jantung aplikasi Codex di OS Anda (`~/.codex/auth.json` atau `%USERPROFILE%\.codex\auth.json`). Layar verifikasi nomor telepon lenyap seketika!
+- **9Router Seamless Auto-Import**: Setiap akun yang berhasil dicetak akan langsung dikirim (di-import) secara otomatis ke dalam database lokal aplikasi **9Router** Anda, terlepas dari bagaimana 9Router itu diinstal (NVM, NPM Global, Mac, Windows, atau Linux). Tidak ada lagi salin-tempel manual!
+- **Multi-Workspace Registration (K12)**: Anda kini bisa memasukkan **banyak ID Workspace K12 sekaligus** (dipisah dengan koma). *Worker* secara pintar akan mendaftarkan satu alamat email (beserta tokennya) ke dalam *semua* Workspace yang Anda daftarkan dalam sekali jalan, tanpa *error* bentrok kredensial.
+
+---
+
+## ⚡ Pembaruan Versi Sebelumnya (v1.2)
 
 Versi 1.2 berfokus pada perbaikan ekstrem di sektor konkurensi (Multi-Threading) saat mengambil OTP dari IMAP:
 
@@ -80,14 +90,6 @@ Versi 1.2 berfokus pada perbaikan ekstrem di sektor konkurensi (Multi-Threading)
 - **Lock-Free Concurrency**: Berkat pencocokan OTP yang super presisi, antrean (Mutex Locking) saat proses permintaan OTP ke OpenAI telah **dihapus sepenuhnya**. Kini puluhan *worker* bisa berjalan secara paralel di detik yang sama, meminta OTP dan membacanya di *inbox* yang sama tanpa *conflict* atau *overlap*. Kecepatan registrasi naik drastis!
 
 ---
-
-## 🌟 Update Komunitas (Ric & Gede Cahya)
-
-Pembaruan terbaru dari kontributor komunitas membawa perbaikan krusial pada stabilitas dan alur otomatisasi:
-
-- **Proxy Preflight Check (oleh @ricatix)**: Sistem kini melakukan validasi kesehatan proxy secara aktif sebelum proses pendaftaran ke OpenAI dimulai. Jika proxy mati, *worker* akan langsung melewatinya.
-- **Safe Registration Cancellation (oleh @ricatix)**: Dukungan *Graceful Shutdown* saat pengguna menekan Ctrl+C. Semua *goroutine* dan *worker* akan dibatalkan dengan mulus tanpa merusak *state* pendaftaran.
-- **Auto Import ke 9Router (oleh @gede-cahya)**: Fitur integrasi langsung! Setiap token akun K12 yang sukses dicetak akan otomatis di-*push* atau di-*import* ke *server* 9Router tanpa perlu menyalin file secara manual.
 
 ### 🔧 Hotfix & Penyesuaian Terkini
 - **JSON Duplicate Bug Fix**: Memperbaiki kutu (*bug*) pemanggilan ganda pada fungsi `saveTokensPerBase` yang sebelumnya menyebabkan output token JSON tercetak dobel (tersimpan 2 kali) untuk setiap satu akun yang berhasil dibuat.

@@ -61,7 +61,7 @@ func getBaseEmail(emailAddr string) string {
 }
 
 // registerOne handles a single account registration.
-func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig, registeredEmails map[string]bool, printMu *sync.Mutex) (bool, string, string, *TokenResult) {
+func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig, registeredEmails map[string]bool, printMu *sync.Mutex) (bool, string, string, []*TokenResult) {
 	select {
 	case <-ctx.Done():
 		return false, "", ctx.Err().Error(), nil
@@ -129,10 +129,12 @@ func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig
 		}
 	}
 
-	tokenResult, err := client.RunRegister(ctx, emailAddr, password, firstName+" "+lastName, birthdate, cfg.K12WorkspaceIDs, gmailIMAP)
+	tokenResults, err := client.RunRegister(ctx, emailAddr, password, firstName+" "+lastName, birthdate, cfg.K12WorkspaceIDs, gmailIMAP)
 
-	if tokenResult != nil {
-		tokenResult.Password = password
+	if len(tokenResults) > 0 {
+		for _, tr := range tokenResults {
+			tr.Password = password
+		}
 	}
 
 	if err != nil {
@@ -142,9 +144,11 @@ func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig
 			fmt.Printf("[%s] 🔄 Zombie detected! Switching to Login Mode for %s...\n", time.Now().Format("15:04:05"), emailAddr)
 			printMu.Unlock()
 
-			tokenResult, err = client.RunLogin(ctx, emailAddr, password, cfg.K12WorkspaceIDs, gmailIMAP)
-			if tokenResult != nil {
-				tokenResult.Password = password
+			tokenResults, err = client.RunLogin(ctx, emailAddr, password, cfg.K12WorkspaceIDs, gmailIMAP)
+			if len(tokenResults) > 0 {
+				for _, tr := range tokenResults {
+					tr.Password = password
+				}
 			}
 
 			if err != nil {
@@ -165,18 +169,20 @@ func registerOne(ctx context.Context, workerID int, tag string, cfg *BatchConfig
 	fileMutex.Lock()
 	f, fileErr := os.OpenFile(cfg.OutputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if fileErr == nil {
-		var line string
-		if tokenResult != nil {
-			line = fmt.Sprintf("%s|%s|%s\n", emailAddr, password, tokenResult.AccessToken)
+		if len(tokenResults) > 0 {
+			for _, tr := range tokenResults {
+				line := fmt.Sprintf("%s|%s|%s\n", emailAddr, password, tr.AccessToken)
+				f.WriteString(line)
+			}
 		} else {
-			line = fmt.Sprintf("%s|%s\n", emailAddr, password)
+			line := fmt.Sprintf("%s|%s\n", emailAddr, password)
+			f.WriteString(line)
 		}
-		f.WriteString(line)
 		f.Close()
 	}
 	fileMutex.Unlock()
 
-	return true, emailAddr, "", tokenResult
+	return true, emailAddr, "", tokenResults
 }
 
 // RunBatch runs concurrent registration tasks with retry until target success count is reached.
@@ -313,7 +319,7 @@ func RunBatch(cfg *BatchConfig) {
 
 				tag := fmt.Sprintf("%d/%d", attempt, cfg.MaxAttempts)
 
-				success, emailAddr, errStr, tokenResult := registerOne(ctx, workerID, tag, cfg, registeredEmails, &printMu)
+				success, emailAddr, errStr, tokenResults := registerOne(ctx, workerID, tag, cfg, registeredEmails, &printMu)
 				if success {
 					atomic.AddInt64(&successCount, 1)
 					ts := time.Now().Format("15:04:05")
@@ -328,11 +334,13 @@ func RunBatch(cfg *BatchConfig) {
 					printMu.Unlock()
 
 					// Collect token result and save to specific JSON
-					if tokenResult != nil {
-						saveTokensPerBase(emailAddr, tokenResult, cfg.GmailMode)
+					if len(tokenResults) > 0 {
+						for _, t := range tokenResults {
+							saveTokensPerBase(emailAddr, t, cfg.GmailMode)
+						}
 
 						printMu.Lock()
-						fmt.Printf("[%s] [W%d] %s\n", ts, workerID, ui.C("🔑 Token saved for "+emailAddr, ui.Yellow))
+						fmt.Printf("[%s] [W%d] %s\n", ts, workerID, ui.C(fmt.Sprintf("🔑 %d Tokens saved for %s", len(tokenResults), emailAddr), ui.Yellow))
 						printMu.Unlock()
 					}
 				} else {

@@ -138,6 +138,10 @@ func main() {
 			register.ImportTo9Router()
 			fmt.Print(ui.C("\nTekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
 			reader.ReadString('\n')
+		case "6":
+			register.ExportToCodex(reader)
+			fmt.Print(ui.C("\nTekan Enter untuk kembali ke Menu Utama...", ui.Yellow))
+			reader.ReadString('\n')
 		case "0":
 			fmt.Println(ui.C("Goodbye! 👋", ui.Cyan))
 			return
@@ -227,6 +231,7 @@ func printMainMenu(cfg *config.Config) {
 	fmt.Println(ui.C("📚 [3] Bantuan & Panduan Penggunaan", ui.Cyan))
 	fmt.Println(ui.C("💾 [4] Export Semua Token ke TXT", ui.Purple))
 	fmt.Println(ui.C("🤖 [5] Import Semua Token ke 9Router", ui.Cyan))
+	fmt.Println(ui.C("🔓 [6] Export & Bypass Codex Verif", ui.Green))
 	fmt.Println(ui.C("❌ [0] Exit", ui.Red))
 	fmt.Println(ui.C("────────────────────────────────────────────────────", ui.Cyan))
 }
@@ -415,15 +420,20 @@ func runSetupWizard(cfg *config.Config, reader *bufio.Reader) {
 	}
 
 	if cfg.EnableK12Invite {
-		currentK12 := ""
-		if len(cfg.K12WorkspaceIDs) > 0 {
-			currentK12 = cfg.K12WorkspaceIDs[0]
-		}
-		fmt.Print(ui.C(fmt.Sprintf("K12 Workspace ID (Tekan Enter buat biarin [%s], atau ketik ID baru): ", currentK12), ui.Yellow))
+		currentK12 := strings.Join(cfg.K12WorkspaceIDs, ",")
+		fmt.Print(ui.C(fmt.Sprintf("K12 Workspace ID (Tekan Enter buat biarin [%s], atau masukin banyak ID dipisah koma): ", currentK12), ui.Yellow))
 		k12Input, _ := reader.ReadString('\n')
 		k12Input = strings.TrimSpace(k12Input)
 		if k12Input != "" {
-			cfg.K12WorkspaceIDs = []string{k12Input}
+			parts := strings.Split(k12Input, ",")
+			var parsed []string
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					parsed = append(parsed, p)
+				}
+			}
+			cfg.K12WorkspaceIDs = parsed
 		}
 	}
 

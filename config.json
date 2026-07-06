@@ -1,11 +1,1 @@
-{
-  "proxy": "",
-  "output_file": "results.txt",
-  "token_output_file": "accounts.json",
-  "default_password": "",
-  "default_domain": "",
-  "k12_workspace_ids": [],
-  "enable_k12_invite": true,
-  "gmail_mode": true,
-  "gmail_accounts": []
-}
+{"gmail_mode":false,"k12_invite":false,"max_workers":3,"target_accounts":1}

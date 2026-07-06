@@ -284,7 +284,8 @@ func (c *Client) callback(cbURL string) (int, map[string]interface{}, error) {
 	return resp.StatusCode, map[string]interface{}{"final_url": resp.Request.URL.String()}, nil
 }
 
-func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, birthdate string, k12WorkspaceIDs []string, gmailIMAP *email.GmailIMAPConfig) (*TokenResult, error) {
+// RunRegister executes the full signup flow for a single account.
+func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, birthdate string, k12WorkspaceIDs []string, gmailIMAP *email.GmailIMAPConfig) ([]*TokenResult, error) {
 	c.print("Starting registration flow...")
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -379,22 +380,18 @@ func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, bir
 
 		// K12 invite + token extraction
 		if len(k12WorkspaceIDs) > 0 {
-			if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
-				return nil, err
-			}
 			return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 		}
+		c.print("No K12 workspace IDs provided, skipping K12 flow")
 		return nil, nil
 	} else if strings.Contains(finalPath, "callback") || strings.Contains(finalURL, "chatgpt.com") {
 		c.print("Account registration completed")
 
 		// K12 invite + token extraction
 		if len(k12WorkspaceIDs) > 0 {
-			if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
-				return nil, err
-			}
 			return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 		}
+		c.print("No K12 workspace IDs provided, skipping K12 flow")
 		return nil, nil
 	} else if strings.Contains(finalPath, "error") || strings.Contains(finalURL, "error") {
 		c.print(fmt.Sprintf("Auth Error jump: %s", finalURL))
@@ -539,12 +536,10 @@ func (c *Client) RunRegister(ctx context.Context, emailAddr, password, name, bir
 
 	// K12 invite + token extraction after full registration
 	if len(k12WorkspaceIDs) > 0 {
-		if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
-			return nil, err
-		}
 		return c.RunK12Flow(ctx, k12WorkspaceIDs, emailAddr, gmailIMAP)
 	}
 
+	c.print("No K12 workspace IDs provided, skipping K12 flow")
 	return nil, nil
 }
 

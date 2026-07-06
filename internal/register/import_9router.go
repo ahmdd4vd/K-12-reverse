@@ -41,6 +41,66 @@ func parseJWT(token string) (string, string) {
 	return payload.AuthData.ChatGPTAccountID, payload.AuthData.ChatGPTPlanType
 }
 
+// find9RouterDB attempts to automatically locate the 9Router data.sqlite file.
+// It checks the global default first, then does a fast scan of common local directories.
+func find9RouterDB(homeDir string) string {
+	defaultPath := filepath.Join(homeDir, ".9router", "db", "data.sqlite")
+	if _, err := os.Stat(defaultPath); err == nil {
+		return defaultPath // Found in default global path
+	}
+	
+	// Cek path khusus Windows AppData
+	appDataPath := filepath.Join(os.Getenv("APPDATA"), "9router", "db", "data.sqlite")
+	if _, err := os.Stat(appDataPath); err == nil {
+		return appDataPath
+	}
+	
+	nvmPath := `C:\nvm4w\nodejs\node_modules\9router\app\cli\.build-home\.9router\db\data.sqlite`
+	if _, err := os.Stat(nvmPath); err == nil {
+		return nvmPath // Found in NVM global path
+	}
+
+	fmt.Println(ui.C("🔍 Mencari database 9Router di folder lokal (Desktop/Downloads)...", ui.Yellow))
+
+	var foundPath string
+	searchDirs := []string{
+		filepath.Join(homeDir, "Desktop"),
+		filepath.Join(homeDir, "Downloads"),
+	}
+
+	for _, dir := range searchDirs {
+		if foundPath != "" {
+			break
+		}
+		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if foundPath != "" {
+				return filepath.SkipDir
+			}
+			if info.IsDir() {
+				name := info.Name()
+				// Skip hidden dirs and massive dependency folders to keep scan under 1 second
+				if strings.HasPrefix(name, ".") || name == "node_modules" || name == "AppData" || name == "Windows" || name == "vendor" {
+					return filepath.SkipDir
+				}
+			}
+			if !info.IsDir() && info.Name() == "data.sqlite" {
+				parent := filepath.Base(filepath.Dir(path))
+				grandparent := filepath.Base(filepath.Dir(filepath.Dir(path)))
+				// Must be inside a folder named 'db', inside a folder containing '9router'
+				if parent == "db" && strings.Contains(strings.ToLower(grandparent), "9router") {
+					foundPath = path
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		})
+	}
+	return foundPath
+}
+
 // ImportTo9Router imports all tokens from data/accounts_*.json files into 9Router's local SQLite database.
 func ImportTo9Router() {
 	fmt.Println(ui.C("\n=== Import Accounts to 9Router ===", ui.Cyan))
@@ -58,14 +118,29 @@ func ImportTo9Router() {
 		fmt.Printf(ui.C("❌ Gagal mendapatkan direktori Home: %v\n", ui.Red), err)
 		return
 	}
-	dbPath := filepath.Join(homeDir, ".9router", "db", "data.sqlite")
+	dbPath := find9RouterDB(homeDir)
 
 	// Verify if the DB file exists
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		fmt.Printf(ui.C("❌ Database 9Router tidak ditemukan di: %s\n", ui.Red), dbPath)
-		fmt.Println("Pastikan 9Router global npm sudah terinstal dan dijalankan minimal sekali.")
-		return
+	if dbPath == "" {
+		fmt.Println(ui.C("❌ Database 9Router tidak ditemukan di folder global maupun lokal.", ui.Red))
+		fmt.Println("Pastikan 9Router sudah terinstal dan dijalankan minimal sekali.")
+		
+		// Fallback: Minta user input manual path
+		fmt.Print(ui.C("Masukkan path lengkap ke file data.sqlite 9Router Anda: ", ui.Yellow))
+		var manualPath string
+		fmt.Scanln(&manualPath)
+		manualPath = strings.TrimSpace(manualPath)
+		if manualPath == "" {
+			return
+		}
+		if _, err := os.Stat(manualPath); os.IsNotExist(err) {
+			fmt.Println(ui.C("❌ File tetap tidak ditemukan. Batal import.", ui.Red))
+			return
+		}
+		dbPath = manualPath
 	}
+
+	fmt.Printf(ui.C("✅ Database 9Router ditemukan di: %s\n", ui.Green), dbPath)
 
 	// Scan for accounts JSON files
 	files, err := filepath.Glob(filepath.Join("data", "accounts_*.json"))
@@ -137,8 +212,11 @@ func ImportTo9Router() {
 				planType = "free"
 			}
 
-			// 2. Query existing ID for this email in 9Router DB
-			queryGetID := fmt.Sprintf("SELECT id FROM providerConnections WHERE provider = 'codex' AND email = '%s';", strings.ReplaceAll(emailClean, "'", "''"))
+			sqlSafeEmail := strings.ReplaceAll(emailClean, "'", "''")
+			sqlSafeAccID := strings.ReplaceAll(accID, "'", "''")
+			
+			// 2. Query existing ID for this email + workspace in 9Router DB
+			queryGetID := fmt.Sprintf("SELECT id FROM providerConnections WHERE provider = 'codex' AND email = '%s' AND json_extract(data, '$.providerSpecificData.chatgptAccountId') = '%s';", sqlSafeEmail, sqlSafeAccID)
 			cmdGet := exec.Command("sqlite3", dbPath, queryGetID)
 			outBytes, err := cmdGet.Output()
 			existingID := strings.TrimSpace(string(outBytes))
@@ -187,12 +265,17 @@ func ImportTo9Router() {
 			}
 
 			sqlSafeData := strings.ReplaceAll(string(connDataBytes), "'", "''")
-			sqlSafeEmail := strings.ReplaceAll(emailClean, "'", "''")
+
+			displayName := fmt.Sprintf("%s [%s]", emailClean, planType)
+			if planType == "k12" && accID != "" {
+				displayName = fmt.Sprintf("%s [%s]", emailClean, accID[:8])
+			}
+			sqlSafeName := strings.ReplaceAll(displayName, "'", "''")
 
 			// 4. Insert or Replace query
 			queryInsert := fmt.Sprintf(
 				"INSERT OR REPLACE INTO providerConnections (id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES ('%s', 'codex', 'oauth', '%s', '%s', 1, 1, '%s', '%s', '%s');",
-				id, sqlSafeEmail, sqlSafeEmail, sqlSafeData, nowStr, nowStr,
+				id, sqlSafeName, sqlSafeEmail, sqlSafeData, nowStr, nowStr,
 			)
 
 			cmdInsert := exec.Command("sqlite3", dbPath, queryInsert)

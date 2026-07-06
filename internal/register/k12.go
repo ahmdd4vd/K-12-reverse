@@ -172,7 +172,7 @@ func (c *Client) getSessionWithAccount(accountID string) (*sessionResponse, erro
 }
 
 // RunK12Flow performs the K12 invite and token extraction after account creation.
-func (c *Client) RunK12Flow(ctx context.Context, workspaceIDs []string, emailAddr string, gmailIMAP *email.GmailIMAPConfig) (*TokenResult, error) {
+func (c *Client) RunK12Flow(ctx context.Context, workspaceIDs []string, emailAddr string, gmailIMAP *email.GmailIMAPConfig) ([]*TokenResult, error) {
 	c.print("Starting K12 invite flow...")
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -183,8 +183,9 @@ func (c *Client) RunK12Flow(ctx context.Context, workspaceIDs []string, emailAdd
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	invited := false
-	invitedWsID := ""
+	baseAccessToken := session.AccessToken
+	var results []*TokenResult
+
 	for _, wsID := range workspaceIDs {
 		wsID = strings.TrimSpace(wsID)
 		if wsID == "" {
@@ -194,14 +195,41 @@ func (c *Client) RunK12Flow(ctx context.Context, workspaceIDs []string, emailAdd
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		success, err := c.requestK12Invite(session.AccessToken, wsID)
+		success, err := c.requestK12Invite(baseAccessToken, wsID)
 		if success {
 			c.print(fmt.Sprintf("✓ K12 invite request SUCCESS: %s", wsID))
-			invited = true
-			invitedWsID = wsID
-			break
-		}
-		if err != nil {
+			
+			c.print(fmt.Sprintf("Switching to K12 workspace %s...", wsID[:8]))
+			if err := c.randomDelay(ctx, 2.0, 2.0); err != nil {
+				return nil, err
+			}
+			
+			c.switchWorkspace(baseAccessToken, wsID)
+			if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
+				return nil, err
+			}
+			
+			wsSession, err := c.getSessionWithAccount(wsID)
+			if err == nil {
+				c.print("✓ Switched to K12 workspace successfully")
+				refreshToken := wsSession.RefreshToken
+				if refreshToken == "" {
+					refreshToken = "not available"
+				}
+				idToken := wsSession.IdToken
+				if idToken == "" {
+					idToken = wsSession.AccessToken
+				}
+				results = append(results, &TokenResult{
+					AccessToken:  wsSession.AccessToken,
+					RefreshToken: refreshToken,
+					IdToken:      idToken,
+					Email:        wsSession.User.Email,
+				})
+			} else {
+				c.print(fmt.Sprintf("⚠ Failed to get session for workspace %s: %v", wsID[:8], err))
+			}
+		} else {
 			c.print(fmt.Sprintf("✗ K12 invite failed [%s]: %v", wsID[:8], err))
 		}
 		if err := c.randomDelay(ctx, 0.3, 0.8); err != nil {
@@ -209,57 +237,25 @@ func (c *Client) RunK12Flow(ctx context.Context, workspaceIDs []string, emailAdd
 		}
 	}
 
-	if !invited {
+	if len(results) == 0 {
 		c.print("⚠ All K12 invites failed, saving free-tier tokens")
+		refreshToken := session.RefreshToken
+		if refreshToken == "" {
+			refreshToken = "not available"
+		}
+		idToken := session.IdToken
+		if idToken == "" {
+			idToken = session.AccessToken
+		}
+		results = append(results, &TokenResult{
+			AccessToken:  session.AccessToken,
+			RefreshToken: refreshToken,
+			IdToken:      idToken,
+			Email:        session.User.Email,
+		})
 	} else {
-		c.print("✓ K12 invite successful, no email verification needed for K12.")
+		c.print(fmt.Sprintf("✓ Extracted %d workspace tokens for %s", len(results), session.User.Email))
 	}
 
-	if invited {
-		c.print("Switching to K12 workspace...")
-		if err := c.randomDelay(ctx, 2.0, 2.0); err != nil {
-			return nil, err
-		}
-
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		c.switchWorkspace(session.AccessToken, invitedWsID)
-		if err := c.randomDelay(ctx, 1.0, 2.0); err != nil {
-			return nil, err
-		}
-
-		newSession, err := c.getSessionWithAccount(invitedWsID)
-		if err == nil {
-			session = newSession
-			c.print("✓ Switched to K12 workspace successfully")
-		} else {
-			c.print(fmt.Sprintf("⚠ Failed to switch workspace, trying regular session: %v", err))
-			newSession, err := c.getSession()
-			if err == nil {
-				session = newSession
-			}
-		}
-	}
-
-	// Step 4: Build token result
-	refreshToken := session.RefreshToken
-	if refreshToken == "" {
-		refreshToken = "not available"
-	}
-
-	idToken := session.IdToken
-	if idToken == "" {
-		idToken = session.AccessToken
-	}
-
-	result := &TokenResult{
-		AccessToken:  session.AccessToken,
-		RefreshToken: refreshToken,
-		IdToken:      idToken,
-		Email:        session.User.Email,
-	}
-
-	c.print(fmt.Sprintf("✓ Tokens extracted for %s", session.User.Email))
-	return result, nil
+	return results, nil
 }
