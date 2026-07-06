@@ -1,128 +1,80 @@
-# K12-Reverse ChatGPT Creator
+<div align="center">
 
-> Otomatisasi Registrasi Akun ChatGPT Skala Besar dengan Fitur K12 Invite dan Multi-Gmail IMAP.
+# K12-Reverse 
 
-K12-Reverse adalah *tool* berbasis Go (Golang) untuk melakukan registrasi akun ChatGPT secara massal. Dibuat dengan antarmuka CLI yang interaktif, *tool* ini memanfaatkan teknik Dot-Trick pada Gmail dan integrasi IMAP untuk mengekstrak OTP secara otomatis tanpa intervensi manual.
+[![GitHub stars](https://img.shields.io/github/stars/ahmdd4vd/K-12-reverse?style=social)](https://github.com/ahmdd4vd/K-12-reverse/stargazers)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ahmdd4vd/K-12-reverse)](https://golang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
----
+**Advanced High-Concurrency ChatGPT Account Registration System**
 
-## 🚀 Fitur Utama
-
-- **Multi-Gmail Dot-Trick**: Menghasilkan ribuan variasi email unik dari satu akun Gmail dasar tanpa memicu sistem anti-spam.
-- **IMAP Auto-Read V2**: Membaca kotak masuk Gmail secara *headless* via protokol IMAP. Fitur terbaru ini sudah disempurnakan (Unread Filter) untuk mencegah kesalahan pembacaan OTP yang kedaluwarsa.
-- **Auto Login & Zombie Rescue (New in v1.1!)**: Otomatis mendeteksi akun yang sudah terdaftar tetapi menggantung (Zombie). Sistem akan secara otomatis *switch* dari alur Pendaftaran (Sign-up) menjadi alur Masuk (Login) baik menggunakan metode OTP maupun Password Native, tanpa putus!
-- **K12 Auto-Invite**: Menggabungkan akun baru (atau akun Zombie yang berhasil di-rescue) ke dalam *workspace* Edukasi (K12) secara instan, lengkap dengan ekstraksi *Token Session*.
-- **Multi-Threading / Workers**: Mendukung registrasi konkurensi (berjalan bersamaan) untuk kecepatan maksimal.
-- **Smart Proxy Support**: Mendukung SOCKS5 / HTTP Proxy dengan *auth* URL (contoh: `socks5://user:pass@host:port`).
-- **Auto-Resume**: Melanjutkan registrasi yang tertunda akibat kegagalan proxy atau terputusnya koneksi, tepat di titik berhentinya.
+</div>
 
 ---
 
-## 🛠️ Persyaratan Sistem
+K12-Reverse adalah *command-line interface* (CLI) berskala produksi yang dirancang khusus untuk mengotomatisasi pendaftaran akun ChatGPT secara massal. Dibangun dengan Golang, sistem ini memanfaatkan teknik *Dot-Trick* Gmail dan integrasi IMAP *headless* untuk mengekstrak OTP secara otonom tanpa intervensi manual.
 
-Sebelum menjalankan program ini, pastikan mesin atau server Anda telah terinstal:
+Sistem ini didesain dengan arsitektur konkurensi tingkat tinggi (lock-free) yang memungkinkan pemrosesan puluhan akun secara paralel pada *thread* yang berbeda, memastikan kecepatan dan efisiensi maksimal.
 
-- **Go (Golang)**: Versi sesuai `go.mod` (`go 1.25.5`).
-- **Koneksi Internet Stabil**: Disarankan menggunakan Proxy berkualitas (Residential/Static) untuk menghindari limitasi *rate-limit* dari Cloudflare/OpenAI.
-- **Akun Gmail**: Akun Gmail utama (*base email*) beserta **App Password**-nya (Sandi Aplikasi).
-
-### Cara Mendapatkan App Password Gmail
-Demi keamanan, Anda tidak bisa menggunakan kata sandi asli Gmail. Anda harus membuat Sandi Aplikasi (App Password):
-1. Aktifkan **Verifikasi 2 Langkah (2FA)** di akun Google Anda.
-2. Masuk ke setelan **Keamanan** akun Google.
-3. Cari menu **Sandi Aplikasi** (App Passwords).
-4. Buat sandi baru (Pilih "Lainnya", beri nama misalnya "K12-Bot").
-5. Salin 16 digit huruf yang muncul (tanpa spasi). Ini adalah kredensial yang akan digunakan dalam *tool*.
+## 📸 Preview
+![CLI Preview](assets/preview.png)
 
 ---
 
-## 📦 Instalasi & Penggunaan
+## ⚙️ Fitur Utama
 
-1. **Kloning Repositori**
-   ```bash
-   git clone https://github.com/ahmdd4vd/K-12-reverse.git
-   cd K-12-reverse
-   ```
-
-2. **Jalankan Program**
-   Anda tidak perlu mengatur konfigurasi manual. Program memiliki asisten pengaturan (*wizard*) interaktif:
-   ```bash
-   go run cmd/register/main.go
-   ```
-
-   Perintah manual lain yang tersedia:
-   ```bash
-   go run cmd/generator/main.go <email> <output_file>
-   GMAIL_BASE=x GMAIL_APP_PASSWORD=y go run cmd/checkmail/main.go
-   go run cmd/testotp/main.go
-   go run test_auth.go
-   go build -o k12-creator ./cmd/register
-   ```
-
-3. **Konfigurasi via CLI**
-   Pilih opsi **[2] Edit Configuration & Gmail Accounts**. Anda akan dipandu untuk:
-   - Memasukkan *Base Email* (contoh: `nama.email@gmail.com`).
-   - Memasukkan *App Password* yang baru saja Anda buat.
-   - Mengatur URL Proxy (opsional).
-   - `PROXY=<proxy_url> go run cmd/register/main.go` overrides `config.json.proxy`.
-   - *Tool* akan otomatis menghasilkan variasi Dot-Trick dan menyimpannya di direktori `data/`.
-
-4. **Mulai Registrasi**
-   Pilih opsi **[1] Start Registration** dari menu utama. Tentukan jumlah *worker* (konkurensi) yang diinginkan, dan program akan berjalan sepenuhnya otomatis.
+- **Codex Verification Bypass (Auto-Injector)** (Baru di v1.3)
+  Mengekstrak dan mengubah token K12 menjadi *Synthetic JWT Token*, lalu menyuntikkannya langsung ke dalam konfigurasi lokal Codex (`~/.codex/auth.json` atau `%USERPROFILE%\.codex\auth.json`). Mengakali verifikasi nomor telepon secara instan.
+- **9Router Seamless Integration** (Baru di v1.3)
+  Mengimpor token secara otomatis ke dalam *database* 9Router pengguna (mendukung konfigurasi NVM, NPM Global, Mac, Windows, dan Linux).
+- **Multi-Workspace K12 Injection** (Baru di v1.3)
+  Mendaftarkan satu akun (dan sub-variasinya) ke beberapa *Workspace* K12 secara bersamaan tanpa benturan kredensial.
+- **Multi-Gmail Dot-Trick**
+  Menghasilkan ribuan variasi email unik dari satu *base email* tanpa memicu sistem anti-spam Google.
+- **Lock-Free IMAP Auto-Read**
+  Membaca *inbox* via IMAP dengan validasi *Exact Match* pada filter *Header*. Memungkinkan konkurensi skala masif tanpa perebutan token OTP antar *worker*.
+- **Smart Proxy & Auto-Resume**
+  Mendukung rotasi proksi SOCKS5/HTTP dan mampu melanjutkan pendaftaran yang terputus dengan tepat.
 
 ---
 
-## 🔥 Apa yang baru di v1.3? (Major Update)
+## 🚀 Panduan Instalasi
 
-Versi 1.3 membawa integrasi penuh ke dalam ekosistem *tools* eksternal dan kemampuan registrasi ganda:
+K12-Reverse dirancang untuk dapat dijalankan secara instan (*plug-and-play*).
 
-- **Codex Verification Bypass (Auto-Injector)**: Lupakan ekstensi browser atau memindah-mindahkan token secara manual. Bot ini kini bisa mengekstrak token ChatGPT dari database lokal, mengubahnya menjadi *Synthetic JWT Token*, dan **menyuntikkannya secara otomatis** ke dalam jantung aplikasi Codex di OS Anda (`~/.codex/auth.json` atau `%USERPROFILE%\.codex\auth.json`). Layar verifikasi nomor telepon lenyap seketika!
-- **9Router Seamless Auto-Import**: Setiap akun yang berhasil dicetak akan langsung dikirim (di-import) secara otomatis ke dalam database lokal aplikasi **9Router** Anda, terlepas dari bagaimana 9Router itu diinstal (NVM, NPM Global, Mac, Windows, atau Linux). Tidak ada lagi salin-tempel manual!
-- **Multi-Workspace Registration (K12)**: Anda kini bisa memasukkan **banyak ID Workspace K12 sekaligus** (dipisah dengan koma). *Worker* secara pintar akan mendaftarkan satu alamat email (beserta tokennya) ke dalam *semua* Workspace yang Anda daftarkan dalam sekali jalan, tanpa *error* bentrok kredensial.
+### Persyaratan Sistem
+- **Go** (minimal versi 1.25.5)
+- **Akun Gmail Utama** (dilengkapi dengan *App Password* / Sandi Aplikasi 16-digit)
+- *(Opsional)* **Proxy** (Residential/Static proxy direkomendasikan untuk mencegah limitasi Cloudflare)
 
----
+### Menjalankan Program
 
-## ⚡ Pembaruan Versi Sebelumnya (v1.2)
+```bash
+# 1. Kloning repositori
+git clone https://github.com/ahmdd4vd/K-12-reverse.git
+cd K-12-reverse
 
-Versi 1.2 berfokus pada perbaikan ekstrem di sektor konkurensi (Multi-Threading) saat mengambil OTP dari IMAP:
+# 2. Jalankan sistem (Wizard interaktif akan otomatis muncul pada eksekusi pertama)
+go run cmd/register/main.go
+```
 
-- **Strict Target IMAP Matching (Concurrency Bypass)**: Pada versi sebelumnya, sistem normalisasi email pada filter inbox IMAP membuat *worker* yang berjalan bersamaan berisiko saling berebut OTP (satu *worker* mencuri OTP milik *worker* lain karena struktur email induknya sama). Versi 1.2 menerapkan pencocokan *To Header* 100% *Exact Match* (termasuk validasi letak titik).
-- **Lock-Free Concurrency**: Berkat pencocokan OTP yang super presisi, antrean (Mutex Locking) saat proses permintaan OTP ke OpenAI telah **dihapus sepenuhnya**. Kini puluhan *worker* bisa berjalan secara paralel di detik yang sama, meminta OTP dan membacanya di *inbox* yang sama tanpa *conflict* atau *overlap*. Kecepatan registrasi naik drastis!
-
----
-
-### 🔧 Hotfix & Penyesuaian Terkini
-- **JSON Duplicate Bug Fix**: Memperbaiki kutu (*bug*) pemanggilan ganda pada fungsi `saveTokensPerBase` yang sebelumnya menyebabkan output token JSON tercetak dobel (tersimpan 2 kali) untuk setiap satu akun yang berhasil dibuat.
-- **Revert Logika Zombie & IMAP (Eks-PR #4)**: Modifikasi logika Zombie Handling dan pembacaan OTP IMAP dari PR #4 telah di-*revert* kembali ke versi murni orisinal 1.2 karena menyebabkan konflik *flow* registrasi. Namun, perbaikan *crash* input `EOF` (`fmt.Printf` *format string bug*) tetap dipertahankan.
-
----
-
-## ⚡ Pembaruan Versi Sebelumnya (v1.1)
-
-Versi 1.1 memperkenalkan mekanisme pemulihan cerdas:
-
-- **Zombie Rescue Mechanism**: Akun yang menggantung (proses tidak selesai) otomatis dialihkan ke alur Login untuk diselamatkan.
-- **Adaptive Authentication (Native Password & OTP)**: Deteksi otomatis metode *Passwordless* (OTP) atau *Native Password* saat login.
-- **IMAP Read Status Verification**: Filter khusus untuk hanya membaca email OTP yang belum terbaca (*Unread*), menghindari duplikasi pembacaan.
-- **Bypass Halaman "About You"**: Injeksi khusus untuk memintas halaman blokir `/about-you` saat proses Login.
+### Konfigurasi Lanjutan
+Pada menu utama CLI, pilih **Opsi [2]** untuk mengelola *Base Email*, *App Passwords*, daftar URL Proxy, dan pendaftaran otomatis *Workspace* K12. Seluruh konfigurasi Anda akan disimpan secara aman di dalam `config.json`.
 
 ---
 
-## 🤝 Kontribusi
+## 👥 Kontributor
 
-Kontribusi selalu terbuka! Jika Anda memiliki perbaikan kode, optimasi *bypass*, atau fitur baru:
-1. *Fork* repositori ini.
-2. Buat *branch* fitur Anda (`git checkout -b fitur/NamaFitur`).
-3. Lakukan *commit* perubahan (`git commit -m "Menambahkan fitur X"`).
-4. *Push* ke *branch* (`git push origin fitur/NamaFitur`).
-5. Buka **Pull Request**.
+Pengembangan alat ini tidak lepas dari dukungan komunitas *open-source*. Kami mengucapkan terima kasih kepada:
 
-Pastikan kode Anda rapi dan mematuhi konvensi bahasa Go (`gofmt`).
+- **@ahmdd4vd** – Penulis Utama & Arsitek Sistem
+- **@ricatix** – *Proxy Preflight Check* & *Graceful Shutdown* Mechanism
+- **@gede-cahya** – Fondasi Integrasi Auto-Import 9Router
+
+Kami sangat terbuka untuk *Pull Request*. Jika Anda memiliki optimasi struktur, perbaikan kutu (*bug*), atau penambahan modul ekstraksi pihak ketiga, silakan berkontribusi.
 
 ---
 
-## 📄 Lisensi
+## 📜 Lisensi
 
-Didistribusikan di bawah Lisensi MIT. Lihat file `LICENSE` untuk informasi selengkapnya.
-
-> Dibuat oleh **Ahmadd4vd**
+Proyek ini didistribusikan di bawah **MIT License**. Anda bebas menggunakan, memodifikasi, dan mendistribusikan perangkat lunak ini. Lihat file `LICENSE` untuk detail lebih lanjut.
