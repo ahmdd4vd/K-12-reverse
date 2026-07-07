@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/verssache/chatgpt-creator/internal/config"
 	"github.com/verssache/chatgpt-creator/internal/ui"
 )
 
